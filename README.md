@@ -4,4 +4,6 @@ This approach uses the most well-known ML algorithm Random Forest (Breiman, 2001
 
 The ML-oriented model consists of eight main steps: data preparation, data splitting, geospatial analysis, features selection and engineering, algorithm selection, feature importance, evaluation of the model, and model deployment.
 
+Happy coding!
+
 ![map](https://user-images.githubusercontent.com/94705218/196356671-319e5dd5-dafa-4979-ba7d-5bc832aa51c6.png)
