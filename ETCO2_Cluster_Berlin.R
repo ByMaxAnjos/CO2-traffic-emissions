@@ -16,7 +16,7 @@
 #=======================================================================================
 
 #Define your directory
-setwd("/Users/co2map/Documents/CO2CityMap/Berlin")
+#setwd("/Users/co2map/Documents/CO2CityMap/Berlin")
 
 #Increasing the memory before the calculation (windows)
 #mymemory <- memory.limit() * 3
