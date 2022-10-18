@@ -16,7 +16,8 @@
 #=======================================================================================
 
 #Define your directory
-#setwd("/Users/co2map/Documents/CO2CityMap/Berlin")
+setwd("/local_data/anjos/CO2_traffic_emissions")
+source(/local_data/anjos/CO2_traffic_emissions/emission_cluster_functions.R)
 
 #Increasing the memory before the calculation (windows)
 #mymemory <- memory.limit() * 3
