@@ -1,2 +1,2 @@
 # CO2-traffic-emissions
-Config files for my GitHub profile.
+This code offers a machine learning–oriented (ML) general framework to estimate the traffic volume and average speed, which are the main variables to calculate the CO2 traffic flux on most roads.
