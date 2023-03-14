@@ -70,7 +70,7 @@ traffic <- fread("myFolder/traffic_berlin_2022_08_09.csv")
 
 write.csv(traffic, "myFolder/traffic_berlin_2022_08_09.csv")
 
-stations_csv <- fread("articleML/counting_stations_berlin.csv", dec=",") #Read cvs counting stations. 
+stations_csv <- fread("myFolder/counting_stations_berlin.csv", dec=",") #Read cvs counting stations. 
 stations <- sf::st_as_sf(stations_csv, coords = c("Latitude", "Longitude"), crs=4326) #Convert stations csv file to shapefile based on column Latitude and Longitude.
 
 weather <- fread("myFolder/weather_berlin_2022_08_09.csv") #Read weather csv file
