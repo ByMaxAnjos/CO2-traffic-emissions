@@ -46,8 +46,8 @@ library(caret)
 Create a folder on your PC and define the path. Then, import the **ZCCM_functions.R** file which contains all the necessary functions.
 
 ```{r}
-setwd("~/Documents/CO2CityMap/Berlin/Components/Transport") #sets the working directory to the specified path
-source("Rcode/ZCCM_functions.R") #runs the ZCCM_functions file, which contains all specific functions 
+setwd("myFolder") #sets the working directory to the specified path
+source("myFolder/ZCCM_functions.R") #runs the ZCCM_functions file, which contains all specific functions 
 
 ```
 
@@ -66,16 +66,16 @@ The relevant files are stored as *traffic*, *stations*, *weather*, *var1*, *var2
 ###Load data
 
 ```{r}
-traffic <- fread("articleML/traffic_berlin_2022_08_09.csv")
+traffic <- fread("myFolder/traffic_berlin_2022_08_09.csv")
 
-write.csv(traffic, "articleML/traffic_berlin_2022_08_09.csv")
+write.csv(traffic, "myFolder/traffic_berlin_2022_08_09.csv")
 
 stations_csv <- fread("articleML/counting_stations_berlin.csv", dec=",") #Read cvs counting stations. 
 stations <- sf::st_as_sf(stations_csv, coords = c("Latitude", "Longitude"), crs=4326) #Convert stations csv file to shapefile based on column Latitude and Longitude.
 
-weather <- fread("articleML/weather_berlin_2022_08_09.csv") #Read weather csv file
+weather <- fread("myFolder/weather_berlin_2022_08_09.csv") #Read weather csv file
 
-var1 <- sf::read_sf("articleML/var1_berlin_landuse.shp")
+var1 <- sf::read_sf("myFolder/var1_berlin_landuse.shp")
 
 ```
 
@@ -101,8 +101,8 @@ iNetRoad <- getOSMfeatures(city = icity,
                            city_area = my_area, 
                            ishp = TRUE, #If TRUE, all feature shps are salved in the output folder. 
                            iplot = TRUE) #If TRUE, all feature maps are salved in the output folder. 
-# st_write(iNetRoad, "name.shp")
-# iNetRoad <- st_read("path/name.shp")
+# st_write(iNetRoad, "myFolder/name.shp")
+# iNetRoad <- st_read("myFolder/name.shp")
 
 GIS_road <- st_join(iNetRoad, var1, join =st_nearest_feature, left = FALSE) #Join with var1, var2, var3 .....
 #GIS_road <- st_join(GIS_road, var2, st_nearest_feature, st_is_within_distance, dist = 0.1)
