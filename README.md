@@ -1,12 +1,11 @@
-# CO2-traffic-emissions
-This code offers a machine learning–oriented (ML) general framework to estimate the traffic volume and average speed, which are the main variables to calculate the CO2 traffic flux on most roads.
-This approach uses the most well-known ML algorithm Random Forest (Breiman, 2001) along with GIS data, road infrastructure, meteorological data, and mainly local traffic measurements.
-
-The ML-oriented model consists of eight main steps: data preparation, data splitting, geospatial analysis, features selection and engineering, algorithm selection, feature importance, evaluation of the model, and model deployment.
+# Zoom City Carbon Model::CO2-traffic-emissions
+This code offers a machine learning–oriented (ML) general framework to estimate the traffic volume and average speed, which are the main variables to calculate the CO2 traffic flux on most roads. This approach uses the most well-known ML algorithm Random Forest along with GIS data, road infrastructure, meteorological data, and mainly local traffic measurements.
 
 Happy coding!
 
 ![map](https://user-images.githubusercontent.com/94705218/196356671-319e5dd5-dafa-4979-ba7d-5bc832aa51c6.png)
+![timevariation](https://user-images.githubusercontent.com/94705218/225139090-885829a0-31ad-4712-b260-ac66b286aa46.png)
+
 
 This document presents the **Zoom City Carbon Model**, an R-based tool designed to estimate CO2 emissions from road traffic at high spatio-temporal resolution. This model uses local traffic data, meteorological data, spatial data, and Machine Learning techniques (ML) to provide hourly estimates of traffic flow, average speed, and CO2 emissions at the road segment and whole street level. The code is divided into two parts: **Learn ML model** and **Deploy ML model**. The **LearnMLmodel.R** file is designed to train and test the ML-model, allowing users to assess the performance of the model for traffic estimates. The **DeployMLmodel.R** file deploys the ML to generate timeseries .csvand maps .multipolylines of CO2 emissions.
 
@@ -128,27 +127,20 @@ The next step consists of dividing our dataset into two distinct sets: training 
 
 ```{r}
 stations_split <- road_sampled %>% distinct(id, .keep_all = TRUE) #create a dataframe with the unique station id
-
 stations_split$fclass <- as.factor(stations_split$fclass) #change the factor class to a factor
 
-
 set.seed(1232)
-
 Index <- createDataPartition(stations_split$fclass, #create a data partition of the stations
                              p = 0.8, #80/20%
                              list = FALSE)
 train_stations <- stations_split[ Index, ] #create a train and test dataframe
 test_stations  <- stations_split[-Index, ]
-
-
 df_split <- traffic %>% openair::selectByDate(year = 2022, month = 8:9) #Split up traffic timeseries 
 df_split$split <- rep(x = c("training", "test"),
                       times = c(floor(x = 0.8 * nrow(x = df_split)), #80 % for training
                                 ceiling(x = 0.2 * nrow(x = df_split)))) # 20 % for test
 traffic_train <- df_split[df_split$split == 'training',] #create a train and test dataframe
 traffic_test <- df_split[df_split$split == 'test',]
-
-
 
 train_stations$id <- as.character(train_stations$id)
 test_stations$id <- as.character(test_stations$id)
@@ -234,8 +226,6 @@ rfModel_df_cars <- rfModel_pred_cars$predictions %>% #Create the new dataframe w
   rename(predcars = ...1)
 write_csv(rfModel_df_cars, "rfModel_df_cars.csv")
 
-
-
 train_processed <- train_recipe %>% #Training the RF for average speed predictions
   dplyr::select(-mean_cars) #Delete mean_cars for training and test sets as RF runs the average speed 
 test_processed <- test_recipe %>%
@@ -253,7 +243,6 @@ rfModel_df_speed <- rfModel_pred_speed$predictions %>%
   bind_cols(features_test %>% select(date)) %>%
   bind_cols(test_processed) %>%
   rename(predspeed = ...1)
-
 write_csv(rfModel_df_speed, "rfModel_df_speed.csv")
 
 ```
@@ -284,7 +273,6 @@ rfModel_df_cars %>% #Plot time variation
 
 metrics_cars <- openair::modStats(rfModel_df_cars, mod= "predcars", obs = "mean_cars", type = "hour") #It provides a set of metrics by hour by the argument "type". 
 write_csv(metrics_cars, "metrics_cars.csv") #Salve the metrics table.
-
 
 #variable importance
 variables_cars <- as.data.frame(importance(rfModel_cars), type = 1)
@@ -332,7 +320,6 @@ variables_speed<- cbind(var.names = rownames(variables_speed), variables_speed)
 variables_speed<- mutate(variables_speed, importance = importance / sum(importance) * 100,
                         importance = round(importance, digits = 1)) %>%
   arrange(desc(importance))
-
 write_csv(variables_speed, "importance_speed.csv")
 
 variables_speed %>%
@@ -387,7 +374,6 @@ When all arguments are defined, the **DeployMLtraffic** is run using the apply f
 imonth <- c("aug", "sep")
 iyear <- c(2022)
 input <- expand.grid(imonth, iyear) 
-
 
 DeployMLtraffic(input, 
               traffic_data = traffic, 
