@@ -389,13 +389,13 @@ myMLtraffic <- apply(input, 1, DeployMLtraffic) #Applying the DeployML traffic f
 
 #Take your timeseries and salve based on the selected arguments:
 
-CO2_street <- do.call(rbind.data.frame, myMLtraffic) #Use for the argument cityStreet 
+CO2_street <- do.call(rbind.data.frame, myMLtraffic) #Use for the cityStreet 
 saveRDS(CO2_street, "CO2_street_Berlin_2022_08_09.rds") #salve file
 
-CO2_count <- do.call(rbind.data.frame, myMLtraffic) #Use for the argument cityCount 
+CO2_count <- do.call(rbind.data.frame, myMLtraffic) #Use for the cityCount 
 write_csv(CO2_count, "CO2_count_Berlin_2022_08_09.csv") #salve file
 
-CO2_map <- unlist(myMLtraffic) ##Use for the argument cityMqp
+CO2_map <- unlist(myMLtraffic) ##Use for the cityMqp
 raster::writeRaster(CO2_map,"CO2_map_Berlin_2022_08_09.TIF", format="GTiff", overwrite =TRUE) #salve file
 
 ```
