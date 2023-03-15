@@ -1,13 +1,10 @@
-# Zoom City Carbon Model::CO2-traffic-emissions
-This code offers a machine learning–oriented (ML) general framework to estimate the traffic volume and average speed, which are the main variables to calculate the CO2 traffic flux on most roads. This approach uses the most well-known ML algorithm Random Forest along with GIS data, road infrastructure, meteorological data, and mainly local traffic measurements.
+# Zoom City Carbon Model::traffic CO2 emissions at street level using Machine Learning
+
+<img width="1139" alt="git_zccm" src="https://user-images.githubusercontent.com/94705218/225165456-b2ad6b1e-9e59-4693-9e00-4371de475372.png">
 
 Happy coding!
 
-![map](https://user-images.githubusercontent.com/94705218/196356671-319e5dd5-dafa-4979-ba7d-5bc832aa51c6.png)
-![timevariation](https://user-images.githubusercontent.com/94705218/225139090-885829a0-31ad-4712-b260-ac66b286aa46.png)
-
-
-This document presents the **Zoom City Carbon Model**, an R-based tool designed to estimate CO2 emissions from road traffic at high spatio-temporal resolution. This model uses local traffic data, meteorological data, spatial data, and Machine Learning techniques (ML) to provide hourly estimates of traffic flow, average speed, and CO2 emissions at the road segment and whole street level. The code is divided into two parts: **Learn ML model** and **Deploy ML model**. The **LearnMLmodel.R** file is designed to train and test the ML-model, allowing users to assess the performance of the model for traffic estimates. The **DeployMLmodel.R** file deploys the ML to generate timeseries .csvand maps .multipolylines of CO2 emissions.
+This document presents the **Zoom City Carbon Model**, an R-based tool designed to estimate CO2 emissions from road traffic at high spatio-temporal resolution. This model uses local traffic data, meteorological data, spatial data, and Machine Learning techniques (ML) to provide hourly estimates of traffic flow, average speed, and CO2 emissions at the road segment and whole street level. The code is divided into two parts: **Learn ML model** and **Deploy ML model**. The **LearnMLmodel** file is designed to train and test the ML-model, allowing users to assess the performance of the model for traffic estimates. The **DeployMLmodel** file deploys the ML to generate timeseries (.csv) and maps (.multipolylines) of CO2 emissions for your city.
 
 To cite this model, please use: Anjos, M.; Meier, F. Zooming into City and tracking CO2 traffic emissions at street level.
 
@@ -28,21 +25,20 @@ The following R packages should be installed in you PC:
 
 if (!require("pacman")) install.packages("pacman") # if the pacman package is not installed, install it
 pacman::p_load(lubridate, tidyverse, data.table, sf, openair, osmdata, tmap, recipes, timetk, caret, ranger, rmarkdown) # use pacman to load the following packages
-library(lubridate)
-library(tidyverse)
-library(data.table)
-library(sf)
-library(openair)
-library(osmdata)
-library(tmap)
-library(recipes)
-library(timeDate)
-library(timetk)
-library(ranger)
-library(caret)
+library(lubridate) # A package that makes it easier to work with dates and times in R.
+library(tidyverse) #A collection of packages for data manipulation and visualization, including dplyr, ggplot2, and tidyr
+library(data.table) #A package for fast and efficient data manipulation.
+library(sf) #A package for working with spatial data using the Simple Features (SF) standard.
+library(openair) #A package for air quality data analysis and visualization.
+library(osmdata) #A package for accessing and working with OpenStreetMap data.
+library(tmap) #A package for creating static and interactive maps in R.
+library(recipes) #A package for preprocessing data using a formula-based interface.
+library(timeDate) #A package for working with dates and times in R.
+library(timetk) #A package for manipulating time series data in R.
+library(ranger) #A package for building fast and accurate random forests models.
+library(caret) #A package for training and evaluating machine learning models in R.
 
 ```
-
 Create a folder on your PC and define the path. Then, import the **ZCCM_functions.R** file which contains all the necessary functions.
 
 ```{r}
@@ -249,7 +245,7 @@ write_csv(rfModel_df_speed, "rfModel_df_speed.csv")
 
 ### Model Evaluation and interpretabilty
 
-To evaluate the ML model we employed Root Mean Square Error (RMSE) as a primary metric. As the RF is part of black-box models, we utilized the feature importance method (*permutation*), which measures the contribution of each feature to the final predictions. The openair R package <https://bookdown.org/david_carslaw/openair/> was used to generate the plots and calculates the metrics from the *rfModel_df_cars* and *rfModel_df_speed*.
+As the RF is part of black-box models, we utilized the feature importance method (*permutation*), which measures the contribution of each feature to the final predictions. The openair R package <https://bookdown.org/david_carslaw/openair/> was used to generate the plots and calculate the metrics from the *rfModel_df_cars* and *rfModel_df_speed*.
 
 #### ML model for traffic flow predictions
 
@@ -296,7 +292,7 @@ variables_cars %>%
   #scale_y_continuous(limits = c(0, 20)) +
   scale_fill_viridis_c(direction = -1) +
   theme_classic(base_size = 15)
-#ggsave("importance_cars_plot.png", iplot)
+#ggsave("importance_cars_plot.png", iplot) #Salve the plot
 
 ```
 
@@ -340,31 +336,31 @@ variables_speed %>%
 
 # Deploy ML model
 
-#can you improve this passage: Once the ML model has been evaluated and fine-tuned, based on the dataset, it is deployed to predict traffic flow and average speed for each road segment in the city. We used **DeployMLtraffic** function to t calculated the traffic CO2 emissions at street level. The outputs are the timeseries and map of traffic predictions and CO2 emissions.
+After fine-tuning and evaluating the ML model on the dataset, it is deployed to predict traffic flow and average speed for each road segment in the city using the  **DeployMLtraffic** function. This function calculates traffic CO2 emissions at the street level and produces time series and maps of traffic predictions and CO2 emissions.
 
-The **DeployMLtraffic** function uses the leaded inupts data such as *traffic,* *stations*, and *weather*, as well the *GIS_road* object obtained in the Get OSM features section. It is include all steps described in the Lean ML model, except data splitting and model evaluation.
+To use the **DeployMLtraffic** function, you need to input data such as *traffic,* *stations*, and *weather*, as well the *GIS_road* object obtained from the Get OSM features section. The function performs all the steps described in the Lean ML model, except data splitting and model evaluation.
 
-The **DeployMLtraffic** has the following arguments:
+The **DeployMLtraffic** has several arguments, including:
 
--   **input** means a data frame with the period defined as months and years for calculations.
+-   **input** a data frame with the period defined as months and years for calculations.
 
--   **traffic_data**, **stations_data**, and **weather_data** that are inputs leaded.
+-   **traffic_data**, **stations_data**, and **weather_data** :inputs for the function.
 
--   road_data that is the shapefile describing the road segments with OSM features, in this case, named as *GIS_road*.
+-   **road_data** a shapefile that describes the road segments with OSM features, which is named *GIS_road* in this case.
 
--   **cityCount**, if TRUE, the all prediction values on each road segment within the city area are calculated and table.csv is provided for each day in the output_citycount folder.
+-   **cityCount**: if TRUE, the function calculates all prediction values on each road segment within the city area and provides a table.csv for each day in the output_citycount folder.
 
--   **cityMap**, if TRUE, the all prediction values on each road segment within the city area are calculated and stack raster with 100 meters resolution at a format .tiff is provided for each day in the output_citymap folder.
+-   **cityMap**: if TRUE, the function calculates all prediction values on each road segment within the city area and provides a stack raster with 100 meters resolution in a .tiff format for each day in the output_citymap folder.
 
--   **tempRes** is the temporal resolution that can be "sec", "min", "hour", "day", "DSTday", "week", "month", "quarter" or "year".
+-   **tempRes**: the temporal resolution, which can be "sec", "min", "hour", "day", "DSTday", "week", "month", "quarter", or "year".
 
--   **spatRes** is the spatial resolution of the cityMap. The default is 100-meter.
+-   **spatRes**:: the spatial resolution of the cityMap. The default is 100 meters.
 
--   **inuit** is the unit of cityMap for CO2 emissions, that can be "micro" -\> CO2 emissions \[micro mole per meter, square per second\], "grams" -\> CO2 emissions \[grams per meter\] or "gramsCarbon" -\> Carbon emissions \[grams per meter\]. Note that cityCount includes all units.
+-   **inuit**: the unit of cityMap for CO2 emissions, which can be "micro" (CO2 emissions [micro mole per meter, square per second]), "grams" (CO2 emissions [grams per meter]), or "gramsCarbon" (Carbon emissions [grams per meter]). Note that cityCount includes all units.
 
--   **ista** is the statistic to apply when aggregating the data and it can be "mean", "max", "min", "median", "frequency", "sd", "percentile". The default is the sum.
+-   **ista**: the statistic to apply when aggregating the data, which can be "mean", "max", "min", "median", "frequency", "sd", or "percentile". The default is the sum.
 
-When all arguments are defined, the **DeployMLtraffic** is run using the apply function for selected period. In this example, the resultant is store as *myMLtraffic*. If cityCount is TRUE e cityMap is FALSE the do.call function can be used to merge list of days of *myMLtraffic* into unique dataframe with the complete time series, named as *CO2_count*. If cityCount is FALSE e cityMap is TRUE, unlist function can be used to obtain stack raster, named as *CO2_map*.
+Once all arguments are defined, the **DeployMLtraffic**  function can be run using the apply function for the selected period. In this example, the result is stored as *myMLtraffic*. If cityCount is TRUE and cityMap is FALSE, the do.call function can be used to merge the list of days of *myMLtraffic* into a unique dataframe with the complete time series, which is named *CO2_count*. If cityCount is FALSE and cityMap is TRUE, the unlist function can be used to obtain the stack raster, which is named *CO2_map*.
 
 ```{r}
 
@@ -388,11 +384,11 @@ DeployMLtraffic(input,
               ista = "sum")
 myMLtraffic <- apply(input, 1, DeployMLtraffic)
 
-CO2_count <- do.call(rbind.data.frame, myMLtraffic) ##Use for the argument cityCount
-write_csv(CO2_count, "CO2_count_Berlin_2022_08_09.csv")
+CO2_count <- do.call(rbind.data.frame, myMLtraffic) #Use for the argument cityCount
+write_csv(CO2_count, "CO2_count_Berlin_2022_08_09.csv") #salve file
 
 CO2_map <- unlist(myMLtraffic) ##Use for the argument cityMqp
-raster::writeRaster(CO2_map,"CO2_map_Berlin_2022_08_09.TIF", format="GTiff", overwrite =TRUE)
+raster::writeRaster(CO2_map,"CO2_map_Berlin_2022_08_09.TIF", format="GTiff", overwrite =TRUE) #salve file
 
 ```
 
