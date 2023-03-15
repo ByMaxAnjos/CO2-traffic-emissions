@@ -289,9 +289,6 @@ getOSMfeatures <- function(city = NULL, road_class = NULL, city_area = NULL, ish
     dir.create(folder)
   }
 
-  # Create a file name using paste0
-
-
   #Get features
   road <- getbb(city) %>% opq() %>% add_osm_feature(key = "highway", value = road_class) %>% osmdata_sf()
   road_osm  <- road$osm_lines %>% dplyr::select(osm_id, name, highway, lanes, maxspeed, geometry) %>%
@@ -552,10 +549,11 @@ DeployMLtraffic <- function(city="Berlin",input,
                         stations_data = stations,
                         weather_data = weather,
                         road_data = GIS_road,
+                        cityStreet = TRUE,
                         cityCount = TRUE,
                         cityMap = TRUE,
                         spatRes = 100,
-                        tempRes = "day",
+                        tempRes = "hour",
                         iunit = "grams",
                         ista = "sum") {
 
@@ -721,6 +719,28 @@ DeployMLtraffic <- function(city="Berlin",input,
     #Join CO2 emissions raod_sampled and raod_nonsampled
     traffic_CO2 <- bind_rows(traffic_CO2_sampled, traffic_CO2_nonsampled)
     setDT(traffic_CO2)
+    
+    if (cityStreet == TRUE) {
+      
+      # Create a folder name using paste0
+      folder <- paste0("output_citystreet/")
+      
+      # Check if the folder exists
+      if (!dir.exists(folder)) {
+        # Create the folder if it does not exist
+        dir.create(folder)
+      }
+      
+      # Create a file name using paste0
+      file <- paste0(folder,iyear,imonth,myday,"CO2street.Rds")
+      
+      # Write the data frame to the file
+      saveRDS(traffic_CO2, file)
+      
+      return(traffic_CO2)
+      
+    }
+    
 
     if (cityCount == TRUE) {
       #Merge CO2 sampled, nonsampled
@@ -747,7 +767,7 @@ DeployMLtraffic <- function(city="Berlin",input,
       }
 
       # Create a file name using paste0
-      file <- paste0(folder,iyear,imonth,myday,"ETCO2.csv")
+      file <- paste0(folder,iyear,imonth,myday,"CO2count.csv")
 
       # Write the data frame to the file
       write_csv(trafficCO2cityCount, file)
@@ -757,6 +777,7 @@ DeployMLtraffic <- function(city="Berlin",input,
       return(trafficCO2cityCount)
 
     }
+    
     if (cityMap == TRUE) {
 
       #Unit for calculations
@@ -807,7 +828,7 @@ DeployMLtraffic <- function(city="Berlin",input,
       }
 
       # Create a file name using paste0
-      file1 <- paste0(folder1,iyear,imonth,myday,iunit,"ETCO2.gpkg")
+      file1 <- paste0(folder1,iyear,imonth,myday,iunit,"CO2map.gpkg")
 
       # Write the data frame to the file
       st_write(ECO2T_cal, file1, driver = "GPKG")

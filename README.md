@@ -280,7 +280,7 @@ variables_cars<- mutate(variables_cars, importance = importance / sum(importance
 write_csv(variables_cars, "importance_cars.csv")
 
 variables_cars %>%
-  head(20) %>%
+  head(20) %>% #Top 20 features
   ggplot(aes(x=reorder(var.names, importance), y=importance, fill=importance))+
   geom_bar(stat="identity", position="dodge", show.legend = FALSE)+
   ylab("Contribution (%)")+
@@ -300,14 +300,14 @@ variables_cars %>%
 
 ```{r}
 
-rfModel_df_speed %>%
+rfModel_df_speed %>% #plot the timeseries
   openair::timePlot(pollutant = c("mean_speed", "predspeed"), group = TRUE,
            avg.time = "hour", name.pol = c("Observed", "ML-model"),
            auto.text = TRUE, cols = c("forestgreen", "brown2"),
            fontsize = 16, lwd = 2, lty = 1,
            ylab = "Average speed [km/h]",
            main = "")
-metrics_cars <- modStats(rfModel_plot_cars, mod= "predspeed", obs = "mean_speed", type = "hour")
+metrics_cars <- modStats(rfModel_plot_cars, mod= "predspeed", obs = "mean_speed", type = "hour") #get the metrics and assess your model
 write_csv(metrics_cars, "metrics_speed.csv")
 
 variables_speed <- as.data.frame(importance(rfModel_speed), type = 1)
@@ -319,7 +319,7 @@ variables_speed<- mutate(variables_speed, importance = importance / sum(importan
 write_csv(variables_speed, "importance_speed.csv")
 
 variables_speed %>%
-  head(20) %>%
+  head(20) %>% #Top 20 features
   ggplot(aes(x=reorder(var.names, importance), y=importance, fill=importance))+
   geom_bar(stat="identity", position="dodge", show.legend = FALSE)+
   ylab("Contribution (%)")+
@@ -348,7 +348,9 @@ The **DeployMLtraffic** has several arguments, including:
 
 -   **road_data** a shapefile that describes the road segments with OSM features, which is named *GIS_road* in this case.
 
--   **cityCount**: if TRUE, the function calculates all prediction values on each road segment within the city area and provides a table.csv for each day in the output_citycount folder.
+-   **cityStreet**: if TRUE, the function calculates all prediction values on each road segment within the city area and provides a dataframe.Rds for each day in the output_cityStreet folder.
+
+-   **cityCount**: if TRUE, the function sums up all prediction values within the city area and provides a dataframe.csv for each day in the output_citycount folder.
 
 -   **cityMap**: if TRUE, the function calculates all prediction values on each road segment within the city area and provides a stack raster with 100 meters resolution in a .tiff format for each day in the output_citymap folder.
 
@@ -356,7 +358,7 @@ The **DeployMLtraffic** has several arguments, including:
 
 -   **spatRes**:: the spatial resolution of the cityMap. The default is 100 meters.
 
--   **inuit**: the unit of cityMap for CO2 emissions, which can be "micro" (CO2 emissions [micro mole per meter, square per second]), "grams" (CO2 emissions [grams per meter]), or "gramsCarbon" (Carbon emissions [grams per meter]). Note that cityCount includes all units.
+-   **inuit**: the unit of cityMap for CO2 emissions, which can be "micro" (CO2 emissions [micro mole per meter, square per second]), "grams" (CO2 emissions [grams per meter]), or "gramsCarbon" (Carbon emissions [grams per meter]). Note that cityStreet and cityCount includes all units.
 
 -   **ista**: the statistic to apply when aggregating the data, which can be "mean", "max", "min", "median", "frequency", "sd", or "percentile". The default is the sum.
 
@@ -376,15 +378,21 @@ DeployMLtraffic(input,
               stations_data = stations,
               weather_data = weather, 
               road_data = GIS_road,
+              cityStreet = TRUE, 
               cityCount = TRUE, 
               cityMap = TRUE, 
               tempRes = "hour", 
               spatRes = 100, 
               iunit = "grams", 
               ista = "sum")
-myMLtraffic <- apply(input, 1, DeployMLtraffic)
+myMLtraffic <- apply(input, 1, DeployMLtraffic) #Applying the DeployML traffic function for the selected period.
 
-CO2_count <- do.call(rbind.data.frame, myMLtraffic) #Use for the argument cityCount
+#Take your timeseries and salve based on the selected arguments:
+
+CO2_street <- do.call(rbind.data.frame, myMLtraffic) #Use for the argument cityStreet 
+saveRDS(CO2_street, "CO2_street_Berlin_2022_08_09.rds") #salve file
+
+CO2_count <- do.call(rbind.data.frame, myMLtraffic) #Use for the argument cityCount 
 write_csv(CO2_count, "CO2_count_Berlin_2022_08_09.csv") #salve file
 
 CO2_map <- unlist(myMLtraffic) ##Use for the argument cityMqp
