@@ -59,7 +59,7 @@ In this code, we create a ML model to estimate the hourly traffic flow and avera
 
 The relevant files are stored as *traffic*, *stations*, *weather*, *var1*, *var2* and so on. In the traffic object, the columns for volume of vehicles and average speed should be renamed as *icars* and *ispeed*, respectively.
 
-###Load data
+### Load data
 
 ```{r}
 traffic <- fread("myFolder/traffic_berlin_2022_08_09.csv")
