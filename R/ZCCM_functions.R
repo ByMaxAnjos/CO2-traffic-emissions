@@ -407,33 +407,33 @@ getOSMfeatures <- function(city = NULL, road_class = NULL, city_area = NULL, ish
     tmap_save(amenity_map, file, asp = 0)
   }
 
-  building <- getbb(city) %>% opq() %>% add_osm_feature(key = "building") %>% osmdata_sf()
-  building_osm  <- building$osm_polygons %>% dplyr::select(building, geometry) %>%
-    st_as_sf() %>% st_transform(crs = 4326) %>%
-    sf::st_intersection(city_area)
-  rm(building)
-
-  if(ishp == TRUE) {
-    file <- paste0(folder,city,"_building_osm.shp")
-    st_write(building_osm, file, append = FALSE)
-  }
-
-  if(iplot == TRUE) {
-    building_map <- building_osm %>%
-      tm_shape() +
-      tm_polygons("building", border.col = NULL) +
-      tm_layout(bg.color = "#F6F6F6" #legend.outside.position = "bottom",
-      ) +
-      tm_legend(title = city) +
-      tm_credits("Source: ©ZoomCityCarbonModel, https://github.com/ByMaxAnjos\nData: OpenStreetMap contributors, 2017", size = 0.7, position=c("left","bottom"))+
-      tm_compass(type="arrow", position=c("right", "bottom"), show.labels = 1) +
-      tm_scale_bar(lwd = 1, color.dark = "black", color.light = "white")+
-      tm_graticules(lwd = .1) +
-      qtm(city_area, fill = NULL)
-
-    file <- paste0(folder,city,"_building_osm.png")
-    tmap_save(building_map, file, asp = 0)
-  }
+  # building <- getbb(city) %>% opq() %>% add_osm_feature(key = "building") %>% osmdata_sf()
+  # building_osm  <- building$osm_polygons %>% dplyr::select(building, geometry) %>%
+  #   st_as_sf() %>% st_transform(crs = 4326) %>%
+  #   sf::st_intersection(city_area)
+  # rm(building)
+  # 
+  # if(ishp == TRUE) {
+  #   file <- paste0(folder,city,"_building_osm.shp")
+  #   st_write(building_osm, file, append = FALSE)
+  # }
+  # 
+  # if(iplot == TRUE) {
+  #   building_map <- building_osm %>%
+  #     tm_shape() +
+  #     tm_polygons("building", border.col = NULL) +
+  #     tm_layout(bg.color = "#F6F6F6" #legend.outside.position = "bottom",
+  #     ) +
+  #     tm_legend(title = city) +
+  #     tm_credits("Source: ©ZoomCityCarbonModel, https://github.com/ByMaxAnjos\nData: OpenStreetMap contributors, 2017", size = 0.7, position=c("left","bottom"))+
+  #     tm_compass(type="arrow", position=c("right", "bottom"), show.labels = 1) +
+  #     tm_scale_bar(lwd = 1, color.dark = "black", color.light = "white")+
+  #     tm_graticules(lwd = .1) +
+  #     qtm(city_area, fill = NULL)
+  # 
+  #   file <- paste0(folder,city,"_building_osm.png")
+  #   tmap_save(building_map, file, asp = 0)
+  # }
 
   place <- getbb(city)  %>% opq() %>% add_osm_feature(key = "place") %>% osmdata_sf()
   place_osm  <- place$osm_polygons %>% dplyr::select(place, geometry) %>%
@@ -522,7 +522,7 @@ getOSMfeatures <- function(city = NULL, road_class = NULL, city_area = NULL, ish
 
   # Join OSM features based on raod_osm at first.
   join_features <- st_join(road_osm, amenity_osm, st_nearest_feature, st_is_within_distance, dist = 0.1) #Start with road_osm
-  join_features <- st_join(join_features, building_osm, st_nearest_feature, st_is_within_distance, dist = 0.1)
+  #join_features <- st_join(join_features, building_osm, st_nearest_feature, st_is_within_distance, dist = 0.1)
   join_features <- st_join(join_features, leisure_osm, st_nearest_feature, st_is_within_distance, dist = 0.1)
   join_features <- st_join(join_features, landuse_osm, st_nearest_feature, st_is_within_distance, dist = 0.1)
   join_features <- st_join(join_features, place_osm, st_nearest_feature, st_is_within_distance, dist = 0.1)
@@ -531,7 +531,8 @@ getOSMfeatures <- function(city = NULL, road_class = NULL, city_area = NULL, ish
 
   road_feat_OSM <- join_features %>%
     mutate(length = round(as.numeric(st_length(geometry)), digits = 0)) %>%
-    dplyr::select(osm_id, name, fclass, lanes, maxspeed, amenity, leisure, landuse, building, place, natural, shop, length, geometry) %>%
+    dplyr::select(osm_id, name, fclass, lanes, maxspeed, amenity, leisure, landuse, place, natural, shop, length, geometry) %>% #Whithout building feature
+    #dplyr::select(osm_id, name, fclass, lanes, maxspeed, amenity, leisure, landuse, building, place, natural, shop, length, geometry)
     mutate_if(is.integer, as.factor) %>% st_as_sf() %>% st_transform(crs = 4326)
 
   if(ishp == TRUE) {
@@ -548,7 +549,8 @@ DeployMLtraffic <- function(city="Berlin",input,
                         traffic_data = traffic,
                         stations_data = stations,
                         weather_data = weather,
-                        road_data = GIS_road,
+                        road_data = iNetRoad,
+                        n.trees = 100,
                         cityStreet = TRUE,
                         cityCount = TRUE,
                         cityMap = TRUE,
@@ -563,9 +565,9 @@ DeployMLtraffic <- function(city="Berlin",input,
   traffic_mod <- openair::selectByDate(traffic_data, year = iyear, month = imonth)
 
   #Join point counting stations
-  road_sampled <- st_join(stations_data, GISroad_data, join = st_is_within_distance, dist = 20, left = FALSE) %>%
+  road_sampled <- st_join(stations_data, road_data, join = st_is_within_distance, dist = 20, left = FALSE) %>%
     mutate(category = "sampled") %>% st_as_sf() %>% st_transform(crs = 4326)
-  road_nonsampled <- GISroad_data[!GISroad_data$osm_id%in%road_sampled$osm_id,]
+  road_nonsampled <- road_data[!road_data$osm_id%in%road_sampled$osm_id,]
   road_nonsampled <- mutate(road_nonsampled, category = "nonsampled")
 
   #Join traffic timeseries to stations by using id
@@ -581,7 +583,7 @@ DeployMLtraffic <- function(city="Berlin",input,
     filter(mean_cars>1, mean_speed >1) %>%
     inner_join(road_sampled, by= "osm_id") %>%
     inner_join(weather_data, by= "date") %>% #Join weather data
-    as_tibble() %>% dplyr::select(-Latitude, -Longitude, -id, -name, -osm_id, -geometry) %>% #Select features
+    as_tibble() %>% dplyr::select(-id, -name, -osm_id, -geometry) %>% #Select features
     mutate_if(is.character, as.factor)
 
   # Timeseries for ML using the idx_date and signature
@@ -604,13 +606,13 @@ DeployMLtraffic <- function(city="Berlin",input,
     dplyr::select(-mean_speed)
 
   #ML-ranger
-  MLcars <- ranger(mean_cars ~ ., data = train_processed, num.trees = 100)
+  MLcars <- ranger(mean_cars ~ ., data = train_processed, num.trees =  n.trees)
 
   #ranger speed
   train_processed <- train_recipe %>%
     dplyr::select(-mean_cars)
 
-  MLspeed <- ranger(mean_speed ~ ., data = train_processed, num.trees = 100)
+  MLspeed <- ranger(mean_speed ~ ., data = train_processed, num.trees =  n.trees)
 
   #Daily-Hourly basis
   iday <- traffic_mod %>%
@@ -624,7 +626,7 @@ DeployMLtraffic <- function(city="Berlin",input,
 
     traffic_day <- traffic_mod %>%
       mutate(day = lubridate::day(date)) %>%
-      openair::selectByDate(day = myday,  hour = 0:23)
+      openair::selectByDate(day = myday)
     traffic_day$id <- as.factor(traffic_day$id)
 
     #Deploying to Non-sampled roads
@@ -741,7 +743,6 @@ DeployMLtraffic <- function(city="Berlin",input,
       
     }
     
-
     if (cityCount == TRUE) {
       #Merge CO2 sampled, nonsampled
       CO2_sampled <-  dplyr::select(traffic_CO2_sampled,  date, starts_with(c("cars_", "ECO2_gmh_", "ECO2_micro_", "EC_gmh_"))) %>%
@@ -831,22 +832,20 @@ DeployMLtraffic <- function(city="Berlin",input,
       file1 <- paste0(folder1,iyear,imonth,myday,iunit,"CO2map.gpkg")
 
       # Write the data frame to the file
-      st_write(ECO2T_cal, file1, driver = "GPKG")
-
+      st_write(ECO2T_cal, file1, driver = "GPKG", append=FALSE)
 
       # #Rasterize as stars
-      ECO2T_ras <- pbapply::pblapply(2:(ncol(ECO2T_cal)-2), function(i)
+      ECO2T_ras <- lapply(2:(ncol(ECO2T_cal)-2), function(i)
         stars::st_rasterize(ECO2T_cal [, i]))
 
       #Convert to data.frame
-      ECO2T_ras <- pbapply::pblapply(1:length(ECO2T_ras), function(i)
+      ECO2T_ras <- lapply(1:length(ECO2T_ras), function(i)
         as.data.frame(ECO2T_ras [[i]], xyz = TRUE))
       #Convert to raster format
-      ECO2T_ras <-  pbapply::pbsapply(1:length(ECO2T_ras), FUN=function(i)
+      ECO2T_ras <-  sapply(1:length(ECO2T_ras), FUN=function(i)
         raster::rasterFromXYZ(xyz = ECO2T_ras[[i]], crs = "+proj=longlat +datum=WGS84 +no_defs"))
       trafficCO2Map <- raster::stack(ECO2T_ras)
-
-      file2 <- paste0(folder1,iyear,imonth,myday,iunit,"ETCO2.TIF")
+      file2 <- paste0(folder1,iyear,imonth,myday,iunit,"CO2ras.TIF")
 
       raster::writeRaster(trafficCO2Map,file2, format="GTiff", overwrite = TRUE)
 
@@ -860,7 +859,6 @@ DeployMLtraffic <- function(city="Berlin",input,
   mydays <- pbapply::pbapply(iday, 1, myCO2day)
   CO2Traffic <- do.call(rbind.data.frame, mydays)
   #write.csv(CO2Traffic_sum, paste0("output/transportation/reports",year,month,"ECO2_Tsum.csv"))
-
   return(CO2Traffic)
 
 }

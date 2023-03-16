@@ -24,11 +24,12 @@ The following R packages should be installed in you PC:
 ```{r}
 
 if (!require("pacman")) install.packages("pacman") # if the pacman package is not installed, install it
-pacman::p_load(lubridate, tidyverse, data.table, sf, openair, osmdata, tmap, recipes, timetk, caret, ranger, rmarkdown) # use pacman to load the following packages
+pacman::p_load(lubridate, tidyverse, data.table, sf, httr, openair, osmdata, tmap, recipes, timetk, caret, ranger, rmarkdown) # use pacman to load the following packages
 library(lubridate) # A package that makes it easier to work with dates and times in R.
 library(tidyverse) #A collection of packages for data manipulation and visualization, including dplyr, ggplot2, and tidyr
 library(data.table) #A package for fast and efficient data manipulation.
 library(sf) #A package for working with spatial data using the Simple Features (SF) standard.
+library(httr)
 library(openair) #A package for air quality data analysis and visualization.
 library(osmdata) #A package for accessing and working with OpenStreetMap data.
 library(tmap) #A package for creating static and interactive maps in R.
@@ -62,16 +63,16 @@ The relevant files are stored as *traffic*, *stations*, *weather*, *var1*, *var2
 ### Load data
 
 ```{r}
-traffic <- fread("myFolder/traffic_berlin_2022_08_09.csv")
+traffic <- fread("Data/traffic_berlin_2022_08_09.csv") %>% 
+  dplyr::select(date, id, icars, ispeed)
 
-write.csv(traffic, "myFolder/traffic_berlin_2022_08_09.csv")
+stations_csv <- fread("Data/counting_stations_berlin.csv", dec=",") #Read cvs counting stations. 
+stations <- sf::st_as_sf(stations_csv, coords = c("Longitude", "Latitude"), crs=4326) #Convert stations csv file to shapefile based on column Latitude and Longitude.
 
-stations_csv <- fread("myFolder/counting_stations_berlin.csv", dec=",") #Read cvs counting stations. 
-stations <- sf::st_as_sf(stations_csv, coords = c("Latitude", "Longitude"), crs=4326) #Convert stations csv file to shapefile based on column Latitude and Longitude.
+weather <- fread("Data/weather_berlin_2022_08_09.csv") %>%  #Read weather csv file
+  dplyr::select(-V1) #Delete column
 
-weather <- fread("myFolder/weather_berlin_2022_08_09.csv") #Read weather csv file
-
-var1 <- sf::read_sf("myFolder/var1_berlin_landuse.shp")
+var1 <- sf::read_sf("shps/var1_berlin_landuse.shp")
 
 ```
 
@@ -348,11 +349,13 @@ The **DeployMLtraffic** has several arguments, including:
 
 -   **road_data** a shapefile that describes the road segments with OSM features, which is named *GIS_road* in this case.
 
+-   **n.trees** number of decision trees in Rondam Forest. The default is 100. 
+
 -   **cityStreet**: if TRUE, the function calculates all prediction values on each road segment within the city area and provides a dataframe.Rds for each day in the output_cityStreet folder.
 
 -   **cityCount**: if TRUE, the function sums up all prediction values within the city area and provides a dataframe.csv for each day in the output_citycount folder.
 
--   **cityMap**: if TRUE, the function calculates all prediction values on each road segment within the city area and provides a stack raster with 100 meters resolution in a .tiff format for each day in the output_citymap folder.
+-   **cityMap**: if TRUE, the function calculates all prediction values on each road segment within the city area and provides a stack raster with 100 meters resolution in a .tiff and shapfile .GPKG formats for each day in the output_citymap folder.
 
 -   **tempRes**: the temporal resolution, which can be "sec", "min", "hour", "day", "DSTday", "week", "month", "quarter", or "year".
 
@@ -367,28 +370,30 @@ Once all arguments are defined, the **DeployMLtraffic**  function can be run usi
 ```{r}
 
 #define the period (inputDates)
-#imonth <- c("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
+#imonth <- c("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec") or c(1:12)
 #iyear <- c(2015:2020), c(2015, 2017, 2020) or (2020).
-imonth <- c("aug", "sep")
+
+imonth <- c("aug","sep")
 iyear <- c(2022)
 input <- expand.grid(imonth, iyear) 
 
-DeployMLtraffic(input, 
-              traffic_data = traffic, 
-              stations_data = stations,
-              weather_data = weather, 
-              road_data = GIS_road,
-              cityStreet = TRUE, 
-              cityCount = TRUE, 
-              cityMap = TRUE, 
-              tempRes = "hour", 
-              spatRes = 100, 
-              iunit = "grams", 
-              ista = "sum")
-myMLtraffic <- apply(input, 1, DeployMLtraffic) #Applying the DeployML traffic function for the selected period.
+#Applying the DeployML traffic function for the selected period
+myMLtraffic <- pbapply::pbapply(input, 1, 
+                                DeployMLtraffic(city="Berlin", input, 
+                                                traffic_data = traffic, 
+                                                stations_data = stations,
+                                                weather_data = weather, 
+                                                road_data = iNetRoad,
+                                                n.trees = 100,
+                                                cityStreet = TRUE, 
+                                                cityCount = TRUE, 
+                                                cityMap = TRUE, 
+                                                tempRes = "hour", 
+                                                spatRes = 100, 
+                                                iunit = "grams", 
+                                                ista = "sum")) 
 
 #Take your timeseries and salve based on the selected arguments:
-
 CO2_street <- do.call(rbind.data.frame, myMLtraffic) #Use for the cityStreet 
 saveRDS(CO2_street, "CO2_street_Berlin_2022_08_09.rds") #salve file
 
