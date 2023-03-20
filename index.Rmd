@@ -142,7 +142,7 @@ highchart() %>%
 
 ## Row {data-height="100"}
 
-## Row 1 {data-height="500"}
+## Row 1 {data-height="110"}
 
 ### Total of traffic emissions [ktCO2/month]
 
