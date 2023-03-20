@@ -41,11 +41,11 @@ iNetRoad <- st_read("shps/iNetroad.shp")
 
 Sidebar {.sidebar}
 =====================================
-The **Zoom City Carbon Model - ZCCM** is a multi-layered, bottom-up approach for mapping and quantifying the total CO2 emissions in a city at high spatial and temporal resolutions, down to 100-meter grids or street level, and sectorial resolution. The model identifies major CO2 emitters and sinks, such as traffic vehicles, building energy consumption, human respiration, and vegetation/soils, and estimates their emission patterns and changes over time.
+The **Zoom City Carbon Model - ZCCM** is a multi-layered, bottom-up approach for mapping and quantifying the total CO2 emissions in a city at high spatial and temporal resolutions, down to 100-meter grids or street level, and sectorial resolution. The model identifies major CO2 emitters and sinks, such as road traffic vehicles, building energy consumption, human respiration, and vegetation/soils, and estimates their emission patterns and changes over time.
 
 This **Emission Geographic Information platform** is designed to communicate the outcomes of the {ZCCM} to users, stakeholders, the research community, and the public in general. It enables the visualization of zoom CO2 maps and summary statistics of emissions in an interactive way.
 
-This **Flexdashboard R** leverages traffic estimates from the ZCCM::traffic model https://github.com/ByMaxAnjos/CO2-traffic-emissions to showcase the spatio-temporal variability of CO2 emissions at the city level. With this tool, users can explore detailed street-level emissions, emissions associated with Open Street Map features, and temporal patterns such as hourly time series, daily cycles, and monthly totals. 
+This **Flexdashboard R** leverages road traffic estimates from the ZCCM::traffic model https://github.com/ByMaxAnjos/CO2-traffic-emissions to showcase the spatio-temporal variability of CO2 emissions at the city level. With this tool, users can explore detailed street-level emissions, emissions associated with Open Street Map features, and temporal patterns such as hourly time series, daily cycles, and monthly totals. 
 
 **Author: Max Anjos, 2023.** [maxanjos\@campus.ul.pt](mailto:maxanjos@campus.ul.pt){.email}, Institute of Ecology Chair of Climatology, Technical University of Berlin.
 
