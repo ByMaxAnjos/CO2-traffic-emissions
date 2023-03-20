@@ -96,7 +96,7 @@ leaflet(imap) %>%
       bringToFront = TRUE
     )
   ) %>%
-  leaflet::addLegend(pal = pal_line, values = 10, opacity = 0.8, title = "tCO2/ m2/month", group = "Total of tCO2") %>% 
+  leaflet::addLegend(pal = pal_line, values = "", opacity = 0.8, title = "tCO2/ m2/month", group = "Total of tCO2") %>% 
   # layers control
   addLayersControl(
     baseGroups = c("OpenStreeMap.Default", "Esri.WorldImagery", "CartoDB.DarkMatter"),
