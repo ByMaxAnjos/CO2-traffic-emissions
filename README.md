@@ -2,11 +2,15 @@
 
 <img width="1139" alt="git_zccm" src="https://user-images.githubusercontent.com/94705218/225165456-b2ad6b1e-9e59-4693-9e00-4371de475372.png">
 
+## Introduction
+
+This document presents the **Zoom City Carbon Model (ZCCM)**, an R-based tool designed to estimate net of CO2 fluxes from cities at high spatial and temporal resolutions. ZCCM accounts for the main sources and sinks of carbon in urban areas, such as road traffic, buildings, human breathing, and vegetation and soils.
+This document presents **ZCCM::traffic model** that uses local traffic data, meteorological data, spatial data, and Machine Learning techniques (ML) to provide hourly estimates of traffic flow, average speed, and CO2 emissions at the road segment and whole street level. 
+The code is divided into two parts: **Learn ML model** and **Deploy ML model**. The *LearnMLmodel* file is designed to train and test the ML-model, allowing users to assess the performance of the model for traffic estimates based on dataset. The *DeployMLmodel* file deploys the ML to generate timeseries (.csv) and maps (.multipolylines) of CO2 emissions for your city.
+
+This model is still undergoing peer-review. Please use it with caution. Anjos, M.; Meier, F. Zooming into City and tracking CO2 traffic emissions at street level (in preparation).
+
 Happy coding!
-
-This document presents the **Zoom City Carbon Model**, an R-based tool designed to estimate CO2 emissions from road traffic at high spatio-temporal resolution. This model uses local traffic data, meteorological data, spatial data, and Machine Learning techniques (ML) to provide hourly estimates of traffic flow, average speed, and CO2 emissions at the road segment and whole street level. The code is divided into two parts: **Learn ML model** and **Deploy ML model**. The **LearnMLmodel** file is designed to train and test the ML-model, allowing users to assess the performance of the model for traffic estimates. The **DeployMLmodel** file deploys the ML to generate timeseries (.csv) and maps (.multipolylines) of CO2 emissions for your city.
-
-To cite this model, please use: Anjos, M.; Meier, F. Zooming into City and tracking CO2 traffic emissions at street level.
 
 ## Input and setting requirements
 
@@ -17,7 +21,7 @@ To ensure the model runs correctly, the following inputs should be loaded:
 3.  Meteorological data .csv (conditionally required) with at least one column called *date*.
 4.  Other variables (optional), in .csv or .shp format, with the same date column recommendation.
 
-The model converts the date-time into a R-formatted version, e.g., "2023-03-13 11:00:00" or "2023-03-13".
+Obs: the model converts the date-time into a R-formatted version, e.g., "2023-03-13 11:00:00" or "2023-03-13".
 
 The following R packages should be installed in you PC:
 
@@ -78,8 +82,7 @@ var1 <- sf::read_sf("shps/var1_berlin_landuse.shp")
 
 ### Get GIS features
 
-Next, you need to obtain the road network for your city using the **getOSMfeatures** function. This function uses the osmdata package to download OpenStreetMap OSM features <https://wiki.openstreetmap.org/wiki/Map_features> and the sf package to convert them into spatial objects. It then geographically joins the OSM features (*iNetRoad*) and *var1* with road classes segments using the st_join and st_nearest_feature functions (*GIS_road*). It is recommend for users salving *iNetRoad* and *GIS_road* files.
-
+Next, you need to obtain the road network for your city using the **getOSMfeatures** function. This function uses the osmdata package to download OpenStreetMap OSM features <https://wiki.openstreetmap.org/wiki/Map_features> and the sf package to convert them into spatial objects. It then geographically joins the OSM features (*iNetRoad*) and *var1* with road classes segments using the st_join and st_nearest_feature functions (*GIS_road*). It is recommend for users salving *iNetRoad* or *GIS_road* files. 
 ```{r}
 icity <- "Berlin"
 
@@ -109,7 +112,7 @@ GIS_road <- st_join(iNetRoad, var1, join =st_nearest_feature, left = FALSE) #Joi
 
 ### Roads categories
 
-The next step is to divide all road segments into two categories: those with traffic count points, which we have labeled as "sampled", and those without, which we have labeled as "non-sampled". This task utilizes the previously obtained *iNetroad* and *GIS_road* object.
+The next step is to divide all road segments into two categories: those with traffic count points, which we have labeled as "sampled", and those without, which we have labeled as "non-sampled". This task utilizes the previously obtained *iNetroad* or *GIS_road* object.
 
 ```{r}
 road_sampled <- st_join(stations, GIS_road, join = st_is_within_distance, dist = 20, left = FALSE) %>%
@@ -151,11 +154,10 @@ test_dataset <- inner_join(traffic_test, test_stations, by ="id")
 
 ### Feature engineering and selection
 
-This task resulted in *train_recipe* and *test_recipe* which contain all spatial and temporal features and dependent variables of the model. In the present example, the dependent variables are the mean of traffic flow (*icars*) and the mean speed (*ispeed*) at the road link (*oms_id*).
+This task involves imputing the missing values and transforming the data in order to select the most relevant predictors. Temporal predictors such as time of day, weekdays, weekends, and holidays indicators were generated using the Step_timeseries_signature function of the R package timetk, which converts the date-time column (e.g., 2023-01-01 01:00:00) into a set of indexes or new predictors.
+This task will result in *train_recipe* and *test_recipe* which contain all spatial and temporal features and dependent variables of the model. 
+In the present example, the dependent variables are the mean of traffic flow (*icars*) and the mean speed (*ispeed*) at the road link (*oms_id*). The *weather* object was joined by the column "*date*" (or other variables with date column).
 
-The *weather* object was joined by the column "*date*" (or other variables with date column).
-
-It also involved imputing the missing values and transforming the data in order to select the most relevant predictors. Temporal predictors such as time of day, weekdays, weekends, and holidays indicators were generated using the Step_timeseries_signature function of the R package timetk, which converts the date-time column (e.g., 2023-01-01 01:00:00) into a set of indexes or new predictors.
 
 ```{r}
 
@@ -200,7 +202,7 @@ test_recipe <- receipe_steps %>% # create a recipe for the test data
 
 ### Selection and training of ML algorithm
 
-To train and test the Ml model, we used Random Forest (RF), a popular ensemble learning technique known for its ability to combine a large number of decision trees for classification or regression.The ranger R package was used to run the RF for traffic flow and speed predictions.
+To train and test the Ml model, we used Random Forest (RF), a popular ensemble learning technique known for its ability to combine a large number of decision trees for classification or regression (Breiman, 2001).The ranger R package was used to run the RF for traffic flow and speed predictions.
 
 ```{r}
 
