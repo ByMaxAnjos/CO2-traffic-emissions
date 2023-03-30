@@ -12,14 +12,14 @@ Happy coding!
 
 ## Input and setting requirements
 
-To ensure the model runs correctly, the following inputs should be loaded:
+To ensure the model runs correctly, it is necessary to load the following inputs::
 
-1.  Traffic data .csv (required) with at least two columns called *date* and *id*.
-2.  Counting traffic stations .csv or .shp (required) with at least three columns called *id*, *Latitude*, and *Longitude*.
-3.  Meteorological data .csv (conditionally required) with at least one column called *date*.
-4.  Other variables (optional), in .csv or .shp format, with the same date column recommendation.
+1.  Traffic data .csv (required) with a minimum of two columns labeled *date* and *id*.
+2.  Counting traffic stations .csv or .shp (required) with at least three columns labeled *id*, *Latitude*, and *Longitude*.
+3.  Meteorological data .csv (conditionally required) with at least one column labeled *date*.
+4.  Other variables (optional), in .csv or .shp format, should have the same date column recommendation.
 
-Obs: the model converts the date-time into a R-formatted version, e.g., "2023-03-13 11:00:00" or "2023-03-13".
+Note that the model converts the date-time into a R-formatted version, e.g., "2023-03-13 11:00:00" or "2023-03-13".
 
 The following R packages should be installed in you PC:
 
@@ -53,13 +53,13 @@ source("myFolder/ZCCM_functions.R") #runs the ZCCM_functions file, which contain
 
 ## Learn ML model
 
-In this code, we create a ML model to estimate the hourly traffic flow and average speed at street level in Berlin, Germany. The data are the following:
+In this code, we create a ML model to estimate the hourly traffic flow and average speed at street level in Berlin, Germany. The data we are using includes:
 
--   Hourly volume of vehicles and average speed for different types of vehicles from the lane-specific detectors at 583 counting station from August to September 2022 from the Digital Platform City Traffic Berlin / Traffic Detection Berlin <https://api.viz.berlin.de/daten/verkehrsdetektion>. These data are named as *traffic_berlin_2022_08_09.csv* and *counting_stations_berlin.csv.*
+-  Hourly volume of vehicles and average speed for different types of vehicles from the lane-specific detectors at 583 counting stations from August to September 2022. These data are sourced from the Digital Platform City Traffic Berlin / Traffic Detection Berlin and are named *traffic_berlin_2022_08_09.csv* and *counting_stations_berlin.csv.*
 
--   Hourly meteorological data such as air temperature, relative humidity, sunshine, rainfall, wind direction, and wind speed from weather station Berlin-Dahlem (latitude 52.4537 and longitude 13.3017) managed by the German Weather Service Climate Data Center. The file is named as *weather_berlin_2022_08_09.csv*.
+-  Hourly meteorological data such as air temperature, relative humidity, sunshine, rainfall, wind direction, and wind speed from the Berlin-Dahlem weather station (latitude 52.4537 and longitude 13.3017) managed by the [German Weather Service Climate Data Center] <https://api.viz.berlin.de/daten/verkehrsdetektion>. The file is named *weather_berlin_2022_08_09.csv*.
 
--   ESRI Shapefile describing the different land use classes in Berlin from the Berlin Digital Environmental Atlas <https://stadtentwicklung.berlin.de/umwelt/umweltatlas/edua_index.shtml>. The file is named as *var1_berlin_landuse.shp.*
+-   ESRI Shapefile describing the different land use classes in Berlin from the [Berlin Digital Environmental Atlas]<https://stadtentwicklung.berlin.de/umwelt/umweltatlas/edua_index.shtml>. The file is named *var1_berlin_landuse.shp.*
 
 The relevant files are stored as *traffic*, *stations*, *weather*, *var1*, *var2* and so on. In the traffic object, the columns for volume of vehicles and average speed should be renamed as *icars* and *ispeed*, respectively.
 
@@ -81,7 +81,7 @@ var1 <- sf::read_sf("shps/var1_berlin_landuse.shp")
 
 ### Get GIS features
 
-Next, you need to obtain the road network for your city using the **getOSMfeatures** function. This function uses the osmdata package to download OpenStreetMap OSM features <https://wiki.openstreetmap.org/wiki/Map_features> and the sf package to convert them into spatial objects. It then geographically joins the OSM features (*iNetRoad*) and *var1* with road classes segments using the st_join and st_nearest_feature functions (*GIS_road*). It is recommend for users salving *iNetRoad* or *GIS_road* files.
+Next, you need to obtain the road network for your city using the **getOSMfeatures** function. This function uses the osmdata package to download [OpenStreetMap OSM features] <https://wiki.openstreetmap.org/wiki/Map_features> and the R package [sf] <https://r-spatial.github.io/sf/> to convert them into spatial objects. It then geographically joins the OSM features (*iNetRoad*) and *var1* with road classes segments using the st_join and st_nearest_feature functions (*GIS_road*). It is recommend for users to salve *iNetRoad* or *GIS_road* files.
 
 ```{r}
 icity <- "Berlin"
@@ -123,7 +123,7 @@ road_nonsampled <- mutate(road_nonsampled, category = "nonsampled")
 
 ### Data splitting
 
-The next step consists of dividing our dataset into two distinct sets: training and testing. First, we randomly assigned 80 % of our traffic count stations to the training set, 20 % to the test set. We made sure to distribute the number of stations evenly across different sampled road categories to ensure a representative sample (*fclass* defined in *class_road*). Next, we selected four months (August and September) from 2022, and split each month into the same training and testing sets. In the last task, we joined the split traffic with split counting stations by the column **id** to create *train_dataset* and *test_dataset*.
+The next step consists of dividing our dataset into two distinct sets: training and testing. First, we randomly assigned 80 % of our traffic count stations to the training set and 20 % to the test set using the R package [caret] <http://topepo.github.io/caret/index.html>. We made sure to distribute the number of stations evenly across different sampled road categories to ensure a representative sample (*fclass* defined in *class_road*). Next, we selected four months (August and September) from 2022, and split each month into the same training and testing sets. In the last task, we joined the split traffic with split counting stations by the column **id** to create *train_dataset* and *test_dataset*.
 
 ```{r}
 stations_split <- road_sampled %>% distinct(id, .keep_all = TRUE) #create a dataframe with the unique station id
@@ -154,7 +154,7 @@ test_dataset <- inner_join(traffic_test, test_stations, by ="id")
 
 ### Feature engineering and selection
 
-This task involves imputing the missing values and transforming the data in order to select the most relevant predictors. Temporal predictors such as time of day, weekdays, weekends, and holidays indicators were generated using the Step_timeseries_signature function of the R package timetk, which converts the date-time column (e.g., 2023-01-01 01:00:00) into a set of indexes or new predictors. This task will result in *train_recipe* and *test_recipe* which contain all spatial and temporal features and dependent variables of the model. In the present example, the dependent variables are the mean of traffic flow (*icars*) and the mean speed (*ispeed*) at the road link (*oms_id*). The *weather* object was joined by the column "*date*" (or other variables with date column).
+This task involves imputing missing values and transforming the data to select the most relevant predictors using the R package [recipe] <https://recipes.tidymodels.org/>. Temporal predictors, such as time of day, weekdays, weekends, and holiday indicators, were generated using the Step_timeseries_signature function of the R package [timetk] <https://business-science.github.io/timetk/>, which converts the date-time column (e.g., 2023-01-01 01:00:00) into a set of indexes or new predictors. This task will result in *train_recipe* and *test_recipe*, which contain all spatial and temporal features and dependent variables of the model. In the present example, the dependent variables are the mean of traffic flow (*icars*) and the mean speed (*ispeed*) at the road link (*oms_id*). The *weather* object was joined by the column "*date*".
 
 ```{r}
 
@@ -199,7 +199,7 @@ test_recipe <- receipe_steps %>% # create a recipe for the test data
 
 ### Selection and training of ML algorithm
 
-To train and test the Ml model, we used Random Forest (RF), a popular ensemble learning technique known for its ability to combine a large number of decision trees for classification or regression (Breiman, 2001).The ranger R package was used to run the RF for traffic flow and speed predictions.
+To train and test the Ml model, we used Random Forest (RF), a popular ensemble learning technique known for its ability to combine a large number of decision trees for classification or regression (Breiman, 2001).The R package [ranger] <https://rdrr.io/cran/ranger/man/ranger.html> was used to run the RF for traffic flow and speed predictions.
 
 ```{r}
 
@@ -338,17 +338,17 @@ variables_speed %>%
 
 After fine-tuning and evaluating the ML model on the dataset, it is deployed to predict traffic flow and average speed for each road segment in the city using the **DeployMLtraffic** function. This function calculates traffic CO2 emissions at the street level and produces time series and maps of traffic predictions and CO2 emissions.
 
-To use the **DeployMLtraffic** function, you need to input data such as *traffic,* *stations*, and *weather*, as well the *GIS_road* object obtained from the Get OSM features section. The function performs all the steps described in the Lean ML model, except data splitting and model evaluation.
+To use the **DeployMLtraffic** function, you need to input data such as *traffic,* *stations*, and *weather*, as well as the *GIS_road* object obtained from the Get OSM features section. The function performs all the steps described in the Lean ML model, except for data splitting and model evaluation.
 
 The **DeployMLtraffic** has several arguments, including:
 
--   **input** a data frame with the period defined as months and years for calculations.
+-   **input**: a data frame with the period defined as months and years for calculations.
 
--   **traffic_data**, **stations_data**, and **weather_data** :inputs for the function.
+-   **traffic_data**, **stations_data**, and **weather_data**:inputs for the function.
 
--   **road_data** a shapefile that describes the road segments with OSM features, which is named *GIS_road* in this case.
+-   **road_data**: a shapefile that describes the road segments with OSM features, which is named *GIS_road* in this case.
 
--   **n.trees** number of decision trees in Rondam Forest. The default is 100.
+-   **n.trees**: number of decision trees in Rondam Forest. The default is 100.
 
 -   **cityStreet**: if TRUE, the function calculates all prediction values on each road segment within the city area and provides a dataframe.Rds for each day in the output_cityStreet folder.
 
