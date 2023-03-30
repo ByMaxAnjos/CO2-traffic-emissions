@@ -11,7 +11,7 @@ The **ZCCM::traffic model** is still undergoing peer-review and should used with
 
 ### People
 
-The development of the ZCCM::traffic model was led by Dr. Max Anjos and joined by Dr.Fred Meier, and it is hosted at the [Chair of Climatology, Institute of Ecology, Technische Universität Berlin](https://www.klima.tu-berlin.de/index.php?show=home_start&lan=en).
+The development of the ZCCM::traffic model was led by [Dr. Max Anjos](https://www.researchgate.net/profile/Max-Anjos/research) and joined by Dr.Fred Meier, and it is hosted at the [Chair of Climatology, Institute of Ecology, Technische Universität Berlin](https://www.klima.tu-berlin.de/index.php?show=home_start&lan=en).
 
 ### Funding 
 
