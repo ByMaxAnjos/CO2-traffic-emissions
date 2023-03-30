@@ -57,9 +57,9 @@ In this code, we create a ML model to estimate the hourly traffic flow and avera
 
 -  Hourly volume of vehicles and average speed for different types of vehicles from the lane-specific detectors at 583 counting stations from August to September 2022. These data are sourced from the Digital Platform City Traffic Berlin / Traffic Detection Berlin and are named *traffic_berlin_2022_08_09.csv* and *counting_stations_berlin.csv.*
 
--  Hourly meteorological data such as air temperature, relative humidity, sunshine, rainfall, wind direction, and wind speed from the Berlin-Dahlem weather station (latitude 52.4537 and longitude 13.3017) managed by the [German Weather Service Climate Data Center] <https://api.viz.berlin.de/daten/verkehrsdetektion>. The file is named *weather_berlin_2022_08_09.csv*.
+-  Hourly meteorological data such as air temperature, relative humidity, sunshine, rainfall, wind direction, and wind speed from the Berlin-Dahlem weather station (latitude 52.4537 and longitude 13.3017) managed by the [German Weather Service Climate Data Center] (https://api.viz.berlin.de/daten/verkehrsdetektion). The file is named *weather_berlin_2022_08_09.csv*.
 
--   ESRI Shapefile describing the different land use classes in Berlin from the [Berlin Digital Environmental Atlas]<https://stadtentwicklung.berlin.de/umwelt/umweltatlas/edua_index.shtml>. The file is named *var1_berlin_landuse.shp.*
+-   ESRI Shapefile describing the different land use classes in Berlin from the [Berlin Digital Environmental Atlas](https://stadtentwicklung.berlin.de/umwelt/umweltatlas/edua_index.shtml). The file is named *var1_berlin_landuse.shp.*
 
 The relevant files are stored as *traffic*, *stations*, *weather*, *var1*, *var2* and so on. In the traffic object, the columns for volume of vehicles and average speed should be renamed as *icars* and *ispeed*, respectively.
 
@@ -81,7 +81,7 @@ var1 <- sf::read_sf("shps/var1_berlin_landuse.shp")
 
 ### Get GIS features
 
-Next, you need to obtain the road network for your city using the **getOSMfeatures** function. This function uses the osmdata package to download [OpenStreetMap OSM features] <https://wiki.openstreetmap.org/wiki/Map_features> and the R package [sf] <https://r-spatial.github.io/sf/> to convert them into spatial objects. It then geographically joins the OSM features (*iNetRoad*) and *var1* with road classes segments using the st_join and st_nearest_feature functions (*GIS_road*). It is recommend for users to salve *iNetRoad* or *GIS_road* files.
+Next, you need to obtain the road network for your city using the **getOSMfeatures** function. This function uses the osmdata package to download [OpenStreetMap OSM features] (https://wiki.openstreetmap.org/wiki/Map_features) and the R package [sf] (https://r-spatial.github.io/sf/) to convert them into spatial objects. It then geographically joins the OSM features (*iNetRoad*) and *var1* with road classes segments using the st_join and st_nearest_feature functions (*GIS_road*). It is recommend for users to salve *iNetRoad* or *GIS_road* files.
 
 ```{r}
 icity <- "Berlin"
@@ -123,7 +123,7 @@ road_nonsampled <- mutate(road_nonsampled, category = "nonsampled")
 
 ### Data splitting
 
-The next step consists of dividing our dataset into two distinct sets: training and testing. First, we randomly assigned 80 % of our traffic count stations to the training set and 20 % to the test set using the R package [caret] <http://topepo.github.io/caret/index.html>. We made sure to distribute the number of stations evenly across different sampled road categories to ensure a representative sample (*fclass* defined in *class_road*). Next, we selected four months (August and September) from 2022, and split each month into the same training and testing sets. In the last task, we joined the split traffic with split counting stations by the column **id** to create *train_dataset* and *test_dataset*.
+The next step consists of dividing our dataset into two distinct sets: training and testing. First, we randomly assigned 80 % of our traffic count stations to the training set and 20 % to the test set using the R package [caret] (http://topepo.github.io/caret/index.html). We made sure to distribute the number of stations evenly across different sampled road categories to ensure a representative sample (*fclass* defined in *class_road*). Next, we selected four months (August and September) from 2022, and split each month into the same training and testing sets. In the last task, we joined the split traffic with split counting stations by the column **id** to create *train_dataset* and *test_dataset*.
 
 ```{r}
 stations_split <- road_sampled %>% distinct(id, .keep_all = TRUE) #create a dataframe with the unique station id
@@ -154,7 +154,7 @@ test_dataset <- inner_join(traffic_test, test_stations, by ="id")
 
 ### Feature engineering and selection
 
-This task involves imputing missing values and transforming the data to select the most relevant predictors using the R package [recipe] <https://recipes.tidymodels.org/>. Temporal predictors, such as time of day, weekdays, weekends, and holiday indicators, were generated using the Step_timeseries_signature function of the R package [timetk] <https://business-science.github.io/timetk/>, which converts the date-time column (e.g., 2023-01-01 01:00:00) into a set of indexes or new predictors. This task will result in *train_recipe* and *test_recipe*, which contain all spatial and temporal features and dependent variables of the model. In the present example, the dependent variables are the mean of traffic flow (*icars*) and the mean speed (*ispeed*) at the road link (*oms_id*). The *weather* object was joined by the column "*date*".
+This task involves imputing missing values and transforming the data to select the most relevant predictors using the R package [recipe] (https://recipes.tidymodels.org/). Temporal predictors, such as time of day, weekdays, weekends, and holiday indicators, were generated using the Step_timeseries_signature function of the R package [timetk] (https://business-science.github.io/timetk/), which converts the date-time column (e.g., 2023-01-01 01:00:00) into a set of indexes or new predictors. This task will result in *train_recipe* and *test_recipe*, which contain all spatial and temporal features and dependent variables of the model. In the present example, the dependent variables are the mean of traffic flow (*icars*) and the mean speed (*ispeed*) at the road link (*oms_id*). The *weather* object was joined by the column "*date*".
 
 ```{r}
 
@@ -199,7 +199,7 @@ test_recipe <- receipe_steps %>% # create a recipe for the test data
 
 ### Selection and training of ML algorithm
 
-To train and test the Ml model, we used Random Forest (RF), a popular ensemble learning technique known for its ability to combine a large number of decision trees for classification or regression (Breiman, 2001).The R package [ranger] <https://rdrr.io/cran/ranger/man/ranger.html> was used to run the RF for traffic flow and speed predictions.
+To train and test the Ml model, we used Random Forest (RF), a popular ensemble learning technique known for its ability to combine a large number of decision trees for classification or regression (Breiman, 2001).The R package [ranger] (https://rdrr.io/cran/ranger/man/ranger.html) was used to run the RF for traffic flow and speed predictions.
 
 ```{r}
 
@@ -245,7 +245,7 @@ write_csv(rfModel_df_speed, "rfModel_df_speed.csv")
 
 ### Model Evaluation and interpretabilty
 
-As the RF is part of black-box models, we utilized the feature importance method (*permutation*), which measures the contribution of each feature to the final predictions. The openair R package <https://bookdown.org/david_carslaw/openair/> was used to generate the plots and calculate the metrics from the *rfModel_df_cars* and *rfModel_df_speed*.
+As the RF is part of black-box models, we utilized the feature importance method (*permutation*), which measures the contribution of each feature to the final predictions. The openair R package (https://bookdown.org/david_carslaw/openair/) was used to generate the plots and calculate the metrics from the *rfModel_df_cars* and *rfModel_df_speed*.
 
 #### ML model for traffic flow predictions
 
