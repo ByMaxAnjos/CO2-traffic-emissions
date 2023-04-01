@@ -416,6 +416,37 @@ raster::writeRaster(CO2_map,"CO2_map_Berlin_2022_08_09.TIF", format="GTiff", ove
 
 ```
 
+### Data - ZCCM::traffic outcomes 
+
+The ZCCM::traffic dataset consists of three data formats:
+
+-  **Geopackage (.gpkg)**: osm_id + hourly (0:23) CO2 emission values per day + road link geometries (The coordinate reference system EPSG:3246)
+
+-  **Raster (.tiff)**: stack raster with hourly (0:23) CO2 emission values per day with 100 meters resolution (EPSG:3246)
+
+-  **DataStreet (.Rds)**: hourly (0:23) per day with 100 meters resolution
+
+-  **CSV (.csv)**: timeseries of hourly CO2 emissions + attributes 
+
+
 ## Emission Geographic Information platform 
 
+text..
+
+
+### Dashboard
+
+
+text..
+
+
+### Timeseries 
+
 Text...
+
+
+
+
+
+
+
