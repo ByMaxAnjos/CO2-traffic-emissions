@@ -406,7 +406,7 @@ week %>%
 
 # iDistrict {data-icon="fa-map"}
 
-### Emission totals per district {data-height=600}
+### Emission totals per district {data-height=500}
 
 ```{r}
 
@@ -462,6 +462,7 @@ iDistrict_map %>%
   hc_yAxis(title = "") %>%
   hc_credits(enabled = TRUE, text = '@ZoomCityCarbonModel')%>% 
   hc_exporting(enabled = TRUE)
+
 ```
 
 
