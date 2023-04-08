@@ -28,15 +28,23 @@ library(plotly)
 library(crosstalk)
 library(DT)
 
-#Read road network ESRI shapefile from TomTom
-df <- list.files(path = "output_citystreet/",     # Identify all csv files in folder
-                  pattern = "*CO2street.Rds", full.names = TRUE) %>%
-  lapply(readRDS) %>%                                            # Open and store all files in list
-  bind_rows () %>%                                             # Combine data sets into one data.frame
-  setkey(date)
 
-iNetRoad <- st_read("shps/iNetroad.shp")
-
+#Load files in dashboard folder 
+imap <- st_read("dashboard/imap.shp")
+trend <- fread("dashboard/trend.csv")
+mapCount <- fread("dashboard/mapCount.csv")
+amenity <- fread("dashboard/amenity.csv")
+natural <- fread("dashboard/natural.csv")
+leisure <- fread("dashboard/leisure.csv")
+shop <- fread("dashboard/shop.csv")
+place <- fread("dashboard/place.csv")
+OSM_road <- fread("dashboard/OSM_raod.csv")
+landuse <- fread("dashboard/landuse.csv")
+street <- fread("dashboard/street.csv")
+hour <- fread("dashboard/hour.csv")
+find_street <- fread("dashboard/find_street.csv")
+week <- fread("dashboard/week.csv")
+iDistrict_map <- st_read("dashboard/iDistrict.shp")
 ```
 
 Sidebar {.sidebar}
@@ -56,23 +64,8 @@ This **Flexdashboard R** leverages road traffic estimates from the ZCCM::traffic
 ```{r fig.height=5}
 
 # Mapping 1
-imap <- df %>%
-  group_by(osm_id) %>%
-  summarise(tCO2 = round(sum(ECO2_gmh)/1000, digits = 2)) %>%
-  #filter(tCO2 > 100) %>%
-  inner_join(iNetRoad, by= "osm_id") %>%
-  dplyr::select(tCO2, name, geometry) %>%
-  st_as_sf() %>%
-  st_transform(crs = 4326) %>% 
-  group_by(name) %>% 
-  summarise(tCO2=sum(tCO2),
-            geometry = st_union(geometry))
-  # mutate(name = ifelse(is.na(name), "SEM", name)) %>%
-  # subset(name !="SEM") %>%
-  
 
 pal_line <- colorFactor(palette = "plasma", domain = NULL)
-
 imap$labels <- paste0(
   "<strong> name: </strong> ",
   imap$name, "<br/> ",
@@ -113,10 +106,6 @@ leaflet(imap) %>%
 # Create tibble for our line plot.  
 #trend <- fread("trend.csv")
 
-trend <- df %>%
-  group_by(date_day) %>%
-  summarise(ktCO2 = round(sum(ECO2_gmh)/1000/1000, digits= 2))
-
 highchart() %>% 
     hc_add_series(trend, hcaes(x = date_day, y = ktCO2, color = ktCO2), type = "spline") %>%
     hc_tooltip(crosshairs = TRUE, borderWidth = 1.5, headerFormat = "", pointFormat =
@@ -149,12 +138,6 @@ highchart() %>%
 ```{r}
 #mapCount <- fread("mapCount.csv")
 
-mapCount <- df %>%
-  group_by(osm_id) %>%
-  summarise(ktCO2 = round(sum(ECO2_gmh)/1000/1000, digits = 2),
-            ktC = round(sum(EC_gmh)/1000/1000, digits = 2),
-            mean_cars = round(mean(cars), digits = 2))
-
 valueBox(round(sum(mapCount$ktCO2), digits = 2),icon = "fa-users", color = "purple")
 ```
 
@@ -171,13 +154,6 @@ valueBox(round(sum(mapCount$ktC), digits = 2), icon="fa-users", color = "purple"
 
 ```{r fig.height=5}
 #amenity <- fread("amenity.csv")
-
-amenity <- df %>%
-  subset(amenity !="other") %>%
-  subset(amenity !="unknown") %>%
-  group_by(amenity) %>%
-  summarise(ktCO2 = round(sum(ECO2_gmh)/1000/1000, digits= 2)) %>%
-  arrange(desc(ktCO2))
 
 # Colors
 custom_colors <- viridis::plasma(n = length(amenity$amenity))
@@ -202,13 +178,6 @@ amenity %>%
 
 ```{r fig.height=5}
 #leisure <- fread("leisure.csv")
-leisure <- df %>%
-  subset(leisure !="other") %>%
-  subset(leisure !="unknown") %>%
-  group_by(leisure) %>%
-  summarise(ktCO2 = round(sum(ECO2_gmh)/1000/1000, digits= 2)) %>%
-  arrange(desc(ktCO2))
-
 
 # Colors
 custom_colors <- viridis::turbo(n = length(leisure$leisure))
@@ -234,14 +203,6 @@ leisure %>%
 ```{r fig.height=5}
 #natural <- fread("natural.csv")
 
-natural <- df %>%
-  subset(natural !="other") %>%
-  subset(natural !="unknown") %>%
-  group_by(natural) %>%
-  summarise(ktCO2 = round(sum(ECO2_gmh)/1000/1000, digits= 2)) %>%
-  arrange(desc(ktCO2))
-
-
 # Colors
 custom_colors <- viridis::viridis(n = length(natural$natural))
 
@@ -265,12 +226,6 @@ natural %>%
 
 ```{r fig.height=5}
 #shop <- fread("shop.csv")
-shop <- df %>%
-  subset(shop !="other") %>%
-  subset(shop !="unknown") %>%
-  group_by(shop) %>%
-  summarise(ktCO2 = round(sum(ECO2_gmh)/1000/1000, digits= 2)) %>%
-  arrange(desc(ktCO2))
 
 # Colors
 custom_colors <- viridis::inferno(n = length(shop$shop))
@@ -297,11 +252,6 @@ shop  %>%
 ### 
 
 ```{r}
-OSM_road <- df %>%
-  group_by(fclass) %>%
-  subset(fclass !="other") %>% 
-  subset(fclass !="unknown") %>% 
-  summarise(ktCO2 = round(sum(ECO2_gmh)/1000/1000, digits= 2))
 
 # Colors
 custom_colors <- viridis::mako(n = length(OSM_road$fclass))
@@ -322,12 +272,6 @@ OSM_road %>%
 
 ```{r}
 
-place <- df %>%
-  group_by(place) %>%
-  subset(place !="other") %>% 
-  subset(place !="unknown") %>% 
-  summarise(ktCO2 = round(sum(ECO2_gmh)/1000/1000, digits= 2))
-
 # Colors
 custom_colors <- viridis::cividis(n = length(place$place))
 
@@ -346,11 +290,6 @@ place %>%
 ### 
 
 ```{r}
-landuse <- df %>%
-  group_by(landuse) %>%
-  subset(landuse !="other") %>% 
-  subset(landuse !="unknown") %>% 
-  summarise(ktCO2 = round(sum(ECO2_gmh)/1000/1000, digits= 2))
 
 # Colors
 custom_colors <- viridis::rocket(n = length(landuse$landuse))
@@ -372,16 +311,10 @@ landuse %>%
 
 ## Row 1 {data-height="500" data-width="400"}
 
-### Top 20 tCO2 Emitter Streets
+### Top 20 Emitter Streets in tCO2
 
 ```{r fig.height=5}
 #street <- fread("street.csv")
-
-street <- df %>%
-  group_by(name) %>%
-  subset(name !="other") %>%
-  summarise(tCO2 = round(sum(ECO2_gmh)/1000, digits= 2)) %>%
-  arrange(desc(tCO2))
 
 # Colors
 custom_colors <- viridis::mako(n = length(street$name))
@@ -402,14 +335,6 @@ street %>%
 
 ```{r}
 #find_street <- fread("find_street.csv")
-
-find_street <- df %>%
-  subset(name !="other") %>%
-  dplyr::select(name, ECO2_gmh, ECO2_micro, EC_gmh, cars, speed, length, fclass, lanes,
-                maxspeed, amenity, leisure, landuse, natural, shop) %>%
-  head(100)
-
-
 find_street %>% 
   datatable(
 caption="Top 20 emitter streets",
@@ -430,10 +355,6 @@ options = list(pageLength = 20
 
 ```{r}
 #hour <- fread("hour.csv")
-
-hour <- df %>%
-  group_by(date_hour) %>%
-  summarise(ktCO2 = round(sum(ECO2_gmh)/1000/1000, digits= 2))
 
 # Create tibble for our line plot.  
 
@@ -464,13 +385,6 @@ highchart() %>%
 ```{r}
 #week <- fread("week.csv")
 
-week <- df %>%
-  group_by(date_wday) %>%
-  summarise(ktCO2 = round(sum(ECO2_gmh)/1000/1000, digits= 2))
-
-# Colors
-#custom_colors <- viridis::viridis(n = length(week$date_wday))
-
 # Labels
 wday_lables <- c("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")
 
@@ -489,6 +403,67 @@ week %>%
   hc_exporting(enabled = TRUE)
 
 ```
+
+# iDistrict {data-icon="fa-map"}
+
+### Emission totals per district {data-height=600}
+
+```{r}
+
+pal_line <- colorFactor(palette = "viridis", domain = NULL, reverse = TRUE)
+iDistrict_map$labels <- paste0(
+  "<strong> district: </strong> ",
+  iDistrict_map$district, "<br/> ",
+  "<strong> tCO2: </strong> ",
+  iDistrict_map$tCO2, "<br/> "
+) %>%
+  lapply(htmltools::HTML)
+
+leaflet(iDistrict_map) %>%
+  addTiles(group = "OpenStreeMap.Default") %>% 
+  addProviderTiles("Esri.WorldImagery", group = "Esri.WorldImagery") %>%
+  addProviderTiles("CartoDB.DarkMatter", group = "CartoDB.DarkMatter") %>%
+  #setView(lng = 0, lat = 30, zoom = 2) %>%
+  addPolygons(weight = 1, smoothFactor = 0.5,
+    #fillColor = "tCO2",
+    color = ~ pal_line(tCO2),
+    opacity = 1.0, fillOpacity = 0.5,
+    label = ~labels,
+    highlight =  highlightOptions(color = "white", weight = 2,
+      bringToFront = TRUE)
+  ) %>%
+  leaflet::addLegend(pal = pal_line, values = "",title = "Traffic tCO2 emissions", group = "Total of tCO2") %>% 
+  # layers control
+  addLayersControl(
+    baseGroups = c("CartoDB.DarkMatter", "OpenStreeMap.Default", "Esri.WorldImagery"),
+    position = "topleft",
+    options = layersControlOptions(collapsed = TRUE)
+  )
+
+```
+
+### Emitter disctrict {data-height=500}
+
+```{r}
+custom_colors <- viridis::viridis(n = length(iDistrict_map$tCO2))
+
+# Leisure Open Street Map feature
+iDistrict_map %>%
+  group_by(district) %>%
+  arrange(desc(tCO2)) %>% 
+  hchart('column', hcaes(x = district, y = tCO2, color = custom_colors)) %>% 
+  hc_add_theme(hc_theme_google()) %>% 
+  hc_tooltip(pointFormat = '<b>ktCO2: </b> {point.y} <br>') %>% 
+  hc_title(text = 'Traffic emissions per district',
+           style = list(fontSize = '25px', fontWeight = 'bold')) %>% 
+  hc_subtitle(text = 'tCO2/month',
+              style = list(fontSize = '16px')) %>% 
+  hc_xAxis(title = "") %>%
+  hc_yAxis(title = "") %>%
+  hc_credits(enabled = TRUE, text = '@ZoomCityCarbonModel')%>% 
+  hc_exporting(enabled = TRUE)
+```
+
 
 # About {data-icon="fa-info-circle"}
 

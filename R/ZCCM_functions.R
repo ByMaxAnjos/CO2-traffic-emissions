@@ -528,10 +528,11 @@ getOSMfeatures <- function(city = NULL, road_class = NULL, city_area = NULL, ish
   join_features <- st_join(join_features, place_osm, st_nearest_feature, st_is_within_distance, dist = 0.1)
   join_features <- st_join(join_features, shop_osm, st_nearest_feature, st_is_within_distance, dist = 0.1)
   join_features <- st_join(join_features, natural_osm, st_nearest_feature, st_is_within_distance, dist = 0.1)
-
+  join_features <- st_join(join_features, district_osm, st_nearest_feature, st_is_within_distance, dist = 0.1)
+  
   road_feat_OSM <- join_features %>%
     mutate(length = round(as.numeric(st_length(geometry)), digits = 0)) %>%
-    dplyr::select(osm_id, name, fclass, lanes, maxspeed, amenity, leisure, landuse, place, natural, shop, length, geometry) %>% #Whithout building feature
+    dplyr::select(osm_id, name, fclass, lanes, maxspeed, amenity, leisure, landuse, place, natural, shop, length,geometry) %>% #Whithout building feature
     #dplyr::select(osm_id, name, fclass, lanes, maxspeed, amenity, leisure, landuse, building, place, natural, shop, length, geometry)
     mutate_if(is.integer, as.factor) %>% st_as_sf() %>% st_transform(crs = 4326)
 
@@ -863,6 +864,184 @@ DeployMLtraffic <- function(city="Berlin",input,
 
 }
 
+
+#PreDashboard
+PrepDash <- function(city = "Berlin", ipath = "output_citystreet/", road = iNetRoad){
+  
+  #Load data
+  df <- list.files(path = ipath,     # Identify all csv files in folder
+                   pattern = "*CO2street.Rds", full.names = TRUE) %>%
+    lapply(readRDS) %>%                                            # Open and store all files in list
+    bind_rows () %>%                                             # Combine data sets into one data.frame
+    setkey(date)
+  
+  # Create a folder name using paste0
+  folder <- paste0("dashboard/")
+  
+  # Check if the folder exists
+  if (!dir.exists(folder)) {
+    # Create the folder if it does not exist
+    dir.create(folder)
+  }
+  
+  
+  # iMap
+  imap <- df %>%
+    group_by(osm_id) %>%
+    summarise(tCO2 = round(sum(ECO2_gmh)/1000, digits = 2)) %>%
+    inner_join(road, by= "osm_id") %>%
+    dplyr::select(tCO2, name, geometry) %>%
+    st_as_sf() %>%
+    st_transform(crs = 4326) %>% 
+    group_by(name) %>% 
+    summarise(tCO2=sum(tCO2),
+              geometry = st_union(geometry))
+  file <- paste0(folder,"imap.shp")
+  st_write(imap, file, append=FALSE)
+  
+  
+  #Trend emissions
+  trend <- df %>%
+    group_by(date_day) %>%
+    summarise(ktCO2 = round(sum(ECO2_gmh)/1000/1000, digits= 2))
+  file <- paste0(folder,"trend.csv")
+  write_csv(trend, file)
+  
+  
+  #Total of traffic emissions [ktCO2/month]
+  mapCount <- df %>%
+    group_by(osm_id) %>%
+    summarise(ktCO2 = round(sum(ECO2_gmh)/1000/1000, digits = 2),
+              ktC = round(sum(EC_gmh)/1000/1000, digits = 2),
+              mean_cars = round(mean(cars), digits = 2))
+  
+  file <- paste0(folder,"mapCount.csv")
+  write_csv(mapCount, file)
+  
+  #Top CO2 Amenity sites
+  amenity <- df %>%
+    subset(amenity !="other") %>%
+    subset(amenity !="unknown") %>%
+    group_by(amenity) %>%
+    summarise(ktCO2 = round(sum(ECO2_gmh)/1000/1000, digits= 2)) %>%
+    arrange(desc(ktCO2))
+  file <- paste0(folder,"amenity.csv")
+  write_csv(amenity, file)
+  
+  #Leisure
+  leisure <- df %>%
+    subset(leisure !="other") %>%
+    subset(leisure !="unknown") %>%
+    group_by(leisure) %>%
+    summarise(ktCO2 = round(sum(ECO2_gmh)/1000/1000, digits= 2)) %>%
+    arrange(desc(ktCO2))
+  file <- paste0(folder,"leisure.csv")
+  write_csv(leisure, file)
+  
+  
+  #Natural 
+  natural <- df %>%
+    subset(natural !="other") %>%
+    subset(natural !="unknown") %>%
+    group_by(natural) %>%
+    summarise(ktCO2 = round(sum(ECO2_gmh)/1000/1000, digits= 2)) %>%
+    arrange(desc(ktCO2))
+  file <- paste0(folder,"natural.csv")
+  write_csv(natural, file)
+  
+  #Shop
+  shop <- df %>%
+    subset(shop !="other") %>%
+    subset(shop !="unknown") %>%
+    group_by(shop) %>%
+    summarise(ktCO2 = round(sum(ECO2_gmh)/1000/1000, digits= 2)) %>%
+    arrange(desc(ktCO2))
+  file <- paste0(folder,"shop.csv")
+  write_csv(shop, file)
+  
+  #OSM_road fclass
+  OSM_road <- df %>%
+    group_by(fclass) %>%
+    subset(fclass !="other") %>% 
+    subset(fclass !="unknown") %>% 
+    summarise(ktCO2 = round(sum(ECO2_gmh)/1000/1000, digits= 2))
+  file <- paste0(folder,"OSM_road.csv")
+  write_csv(OSM_road, file)
+  
+  #Place
+  place <- df %>%
+    group_by(place) %>%
+    subset(place !="other") %>% 
+    subset(place !="unknown") %>% 
+    summarise(ktCO2 = round(sum(ECO2_gmh)/1000/1000, digits= 2))
+  file <- paste0(folder,"place.csv")
+  write_csv(place, file)
+  
+  #Landuse
+  landuse <- df %>%
+    group_by(landuse) %>%
+    subset(landuse !="other") %>% 
+    subset(landuse !="unknown") %>% 
+    summarise(ktCO2 = round(sum(ECO2_gmh)/1000/1000, digits= 2))
+  file <- paste0(folder,"landuse.csv")
+  write_csv(landuse, file)
+  
+  #Top 20 Emitter streets in tCO2
+  street <- df %>%
+    group_by(name) %>%
+    subset(name !="other") %>%
+    summarise(tCO2 = round(sum(ECO2_gmh)/1000, digits= 2)) %>%
+    arrange(desc(tCO2))
+  file <- paste0(folder,"street.csv")
+  write_csv(street, file)
+  
+  #Find street
+  find_street <- df %>%
+    subset(name !="other") %>%
+    subset(landuse !="unknown") %>% 
+    dplyr::select(name, ECO2_gmh, ECO2_micro, EC_gmh, cars, speed, length, fclass, lanes,
+                  maxspeed, amenity, leisure, landuse, natural, shop) %>%
+    head(100)
+  file <- paste0(folder,"find_street.csv")
+  write_csv(find_street, file)
+  
+  #Hour
+  hour <- df %>%
+    group_by(date_hour) %>%
+    summarise(ktCO2 = round(sum(ECO2_gmh)/1000/1000, digits= 2))
+  file <- paste0(folder,"hour.csv")
+  write_csv(hour, file)
+  
+  #Week
+  week <- df %>%
+    group_by(date_wday) %>%
+    summarise(ktCO2 = round(sum(ECO2_gmh)/1000/1000, digits= 2))
+  file <- paste0(folder,"week.csv")
+  write_csv(week, file)
+  
+  #iDistrict
+  district <- getbb(city) %>% opq() %>% add_osm_feature(key = "admin_level", value = "9") %>% # level 9 is for districts
+    osmdata_sf()
+  district_osm <- district$osm_multipolygons %>%
+    dplyr::select(osm_id, name, geometry) %>% rename(district = name) %>% 
+    st_as_sf() %>% st_transform(crs = 4326)
+  rm(district)
+  iDistrict_map <- df %>%
+    group_by(osm_id) %>%
+    summarise(tCO2 = round(sum(ECO2_gmh)/1000, digits = 2)) %>%
+    inner_join(road, by= "osm_id") %>%
+    dplyr::select(tCO2, geometry) %>%
+    st_as_sf() %>%
+    st_transform(crs = 4326) %>%
+    raster::aggregate(district_osm, FUN=sum) %>% 
+    bind_cols(district_osm %>% as_tibble() %>% dplyr::select(-geometry)) %>%
+    st_as_sf() %>%
+    st_transform(crs = 4326)
+  file <- paste0(folder,"iDistrict.shp")
+  st_write(iDistrict_map, file, append=FALSE)
+  
+  return()
+}
 
 
 

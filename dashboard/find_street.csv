@@ -1,0 +1,101 @@
+name,ECO2_gmh,ECO2_micro,EC_gmh,cars,speed,length,fclass,lanes,maxspeed,amenity,leisure,landuse,natural,shop
+Blumberger Damm,0.624,3.939393939393939,14.444444444444443,25,50,192,secondary,2,50,parking,park,grass,water,other
+Invalidenstraße,0.24941942610000004,1.5746175890151517,5.773597826388889,59,30.5,26,other,1,30,parking,park,other,scrub,other
+Grunerstraße,1.2427914993749996,7.845905930397723,28.768321744791656,136.25,47,71,primary,1,30,other,park,other,water,mall
+Bundesallee,0.29633315400000004,1.8707901136363638,6.85956375,36,42.5,62,secondary,1,50,parking,playground,residential,scrub,car
+Hohenzollerndamm,1.5467170781250001,9.76462801846591,35.80363606770833,62.5,47.5,193,secondary,2,50,parking,other,residential,scrub,car
+Bahnhofstraße,1.5203702410000002,9.5982969760101,35.19375557870371,68.5,19.5,104,secondary,2,50,bicycle_parking,park,residential,scrub,car
+Invalidenstraße,1.1133181763999997,7.028523840909089,25.771254083333325,67,38,118,secondary,2,50,shelter,playground,commercial,scrub,other
+Falkenseer Damm,1.93076,12.189141414141414,44.693518518518516,47,53,316,secondary,3,50,school,park,residential,grassland,supermarket
+Lindenstraße,0.16119999999999998,1.0176767676767675,3.731481481481481,124,50.5,10,secondary,4,50,parking,park,residential,grassland,supermarket
+Lindenstraße,1.0478,6.61489898989899,24.25462962962963,124,50.5,65,secondary,2,50,parking,park,grass,grassland,supermarket
+Lindenstraße,1.3297911041249997,8.395145859374997,30.78220148437499,127.5,46.5,81,secondary,3,30,school,pitch,residential,scrub,supermarket
+Grabbeallee,0.9001830749999998,5.682973958333331,20.83757118055555,73,30,75,primary,1,50,school,park,residential,scrub,supermarket
+Mariendorfer Damm,2.2834646779499996,14.415812360795451,52.85797865624999,90.5,43,191,primary,2,50,parking,playground,residential,wood,supermarket
+Warschauer Straße,0.6446842500000001,4.069976325757576,14.923246527777778,115,42,42,primary,2,50,parking,outdoor_seating,commercial,scrub,mall
+Petersburger Straße,0.375794016,2.3724369696969694,8.698935555555556,32,26,65,primary,2,50,parking,playground,residential,scrub,other
+Karl-Marx-Allee,2.2675937474666665,14.315617092592591,52.49059600617284,89.66666666666667,49.333333333333336,198,primary,3,50,parking,playground,residential,scrub,supermarket
+Karl-Marx-Allee,2.4050236715555555,15.183230249719415,55.67184424897119,89.66666666666667,49.333333333333336,210,primary,3,50,parking,park,grass,scrub,supermarket
+Frankfurter Allee,0.84968,5.364141414141414,19.668518518518518,86,55,76,primary,2,50,parking,playground,grass,scrub,mall
+Frankfurter Allee,0.30186,1.905681818181818,6.9875,86,55,27,primary,2,50,parking,pitch,grass,scrub,mall
+Hansastraße,2.667918664125,16.842920859375,61.757376484375,48.5,47.5,429,secondary,2,50,other,park,residential,scrub,car
+Waterloo-Ufer,2.05504,12.973737373737373,47.57037037037037,164.66666666666666,54.333333333333336,96,secondary,3,50,other,park,other,scrub,other
+Brunnenstraße,16.140936815625,101.8998536339962,373.6327966579861,723.5,26.5,125,secondary,2,50,parking,park,residential,scrub,other
+Storkower Straße,0.1425679596,0.9000502499999998,3.3001842499999996,49.5,44,22,secondary,5,50,parking,other,residential,scrub,other
+Hessische Straße,1.1993529384,7.57167259090909,27.762799499999996,86,28,81,secondary,2,30,other,playground,residential,scrub,kiosk
+Mariendorfer Damm,3.4307000000000007,21.6584595959596,79.41435185185186,94.25,58.5,280,primary,3,50,parking,outdoor_seating,grass,scrub,supermarket
+Alt-Moabit,0.5746010943749997,3.627532161458331,13.300951258680549,37.5,46.5,119,secondary,2,50,parking,park,grass,scrub,supermarket
+Torstraße,1.1540359994999998,7.2855808049242405,26.713796284722218,90.5,35,86,secondary,4,30,school,unknown,residential,scrub,kiosk
+Treskowallee,6.496099999999999,41.01073232323232,150.37268518518516,95,52,526,secondary,2,50,other,park,residential,scrub,supermarket
+Gitschiner Straße,5.909085,37.304829545454545,136.78437499999998,175.5,52,259,secondary,3,50,bicycle_parking,park,residential,water,other
+Hauptstraße,3.0592473454666664,19.313430211279456,70.81591077469135,77.66666666666667,32.333333333333336,252,primary,4,30,other,park,residential,scrub,supermarket
+Potsdamer Straße,2.7649136969999994,17.45526323863636,64.00263187499998,130,43,161,primary,4,30,parking,park,residential,other,other
+Torstraße,2.2076270617499993,13.937039531249996,51.10247828124998,190.5,46.5,90,secondary,2,30,shelter,playground,residential,scrub,other
+Kurfürstendamm,0.936264069,5.910758011363636,21.672779375,86,42.5,82,secondary,3,50,other,park,grass,grassland,other
+Müllerstraße,0.6318252382499999,3.9887956960227267,14.625584218749998,45,23.5,73,primary,2,50,other,sports_centre,grass,other,supermarket
+Müllerstraße,1.5752355254999997,9.944668721590906,36.463785312499994,45,23.5,182,primary,2,50,parking,sports_centre,grass,other,supermarket
+Müllerstraße,1.523304684,9.6168225,35.2616825,45,23.5,176,primary,2,50,parking,sports_centre,other,other,supermarket
+Landsberger Allee,1.0233741247500001,6.460695232007576,23.689215850694445,129,34.5,53,primary,2,50,other,playground,grass,scrub,other
+Straße des 17. Juni,0.52962,3.343560606060606,12.259722222222221,97,60.5,42,primary,2,50,parking,unknown,other,unknown,supermarket
+Straße des 17. Juni,3.73256,23.56414141414141,86.40185185185184,97,60.5,296,primary,2,50,parking,unknown,other,unknown,supermarket
+Königin-Elisabeth-Straße,0.5551100747999999,3.5044827954545443,12.849770249999995,27,38,146,primary,2,50,parking,playground,residential,grassland,car
+Joachimsthaler Straße,0.9964598687999999,6.290781999999999,23.066200666666663,79.5,24,66,secondary,4,50,parking,park,commercial,scrub,other
+Hardenbergstraße,2.3385752207999997,14.763732454545451,54.13368566666666,68.25,41.75,256,secondary,3,50,bicycle_parking,other,grass,scrub,kiosk
+Roedernallee,1.676155,10.581786616161615,38.79988425925926,53.5,53.5,241,primary,2,50,parking,park,residential,water,car
+Leibnizstraße,0.36409354142499994,2.29857033727904,8.428091236689813,116.5,40.5,23,other,2,50,parking,pitch,residential,scrub,other
+Tempelhofer Damm,3.0707949999999995,19.386332070707066,71.08321759259258,198.5,54,119,primary,3,50,parking,playground,grass,scrub,supermarket
+Potsdamer Straße,0.2645338700666667,1.6700370585016835,6.123469214506173,86,35.666666666666664,21,primary,3,30,other,park,grass,scrub,mall
+Leipziger Straße,1.3982918975999998,8.827600363636362,32.367867999999994,152,49,72,primary,4,30,bicycle_parking,playground,commercial,scrub,other
+Otto-Suhr-Allee,1.0293236177777776,6.498255162738494,23.826935596707813,70,43.666666666666664,112,secondary,2,50,parking,playground,grass,water,other
+Otto-Suhr-Allee,0.22975973611111108,1.4505033845398425,5.318512409979423,70,43.666666666666664,25,secondary,2,50,parking,playground,grass,water,other
+Otto-Suhr-Allee,1.038514007222222,6.556275298120088,24.03967609310699,70,43.666666666666664,113,secondary,2,50,parking,playground,grass,water,other
+Müllerstraße,0.6977014812000002,4.404681068181819,16.150497250000004,122,29,34,primary,2,50,other,park,other,scrub,other
+Müllerstraße,0.6977014812000002,4.404681068181819,16.150497250000004,122,29,34,primary,3,50,other,playground,other,scrub,other
+Greifswalder Straße,0.11134892249999999,0.7029603693181817,2.577521354166666,57.5,46,15,primary,2,50,shelter,playground,residential,scrub,other
+Greifswalder Straße,0.08907913800000002,0.5623682954545455,2.0620170833333336,57.5,46,12,primary,3,50,shelter,playground,residential,scrub,other
+Greifswalder Straße,1.3733033774999999,8.669844554924241,31.78943003472222,57.5,46,185,primary,2,50,other,playground,residential,wood,other
+Rhinstraße,0.88205,5.568497474747474,20.417824074074073,57.5,66.5,118,secondary,2,60,parking,park,other,scrub,car
+Buschkrugallee,5.915590695299999,37.34590085416666,136.93496979861106,62,46.5,741,secondary,2,50,other,unknown,grass,scrub,other
+Goerzallee,0.946111562,5.972926527777777,21.90073060185185,40,28.5,139,secondary,2,50,parking,other,residential,water,supermarket
+Goerzallee,0.27226232,1.7188277777777776,6.302368518518518,40,28.5,40,secondary,2,50,parking,other,residential,water,other
+Goerzallee,0.03403279,0.2148534722222222,0.7877960648148148,40,28.5,5,secondary,2,50,parking,other,residential,water,other
+Neuköllner Straße,0.59287240305,3.7428813323863634,13.72389821875,83.5,43.5,54,secondary,3,50,school,sports_centre,residential,scrub,car
+Lindenstraße,0.5897010600000001,3.7228602272727276,13.650487500000002,54,36,75,secondary,2,50,other,playground,residential,other,car
+Gertraudenstraße,2.4251268422685177,15.310144206240642,56.13719542288235,179.16666666666666,49.833333333333336,106,primary,3,50,parking,park,other,unknown,other
+Mariendorfer Damm,1.2865125,8.121922348484848,29.780381944444443,94.25,58.5,105,primary,2,50,parking,outdoor_seating,residential,scrub,other
+Bundesallee,0.41104276199999995,2.594966931818181,9.514878749999998,36,42.5,86,secondary,1,50,bicycle_parking,playground,residential,scrub,car
+Romain-Rolland-Straße,0.39260448719999996,2.4785636818181813,9.088066833333333,41,38,68,secondary,3,50,other,unknown,residential,water,car
+Kurfürstendamm,0.799249815,5.045769034090909,18.501153125,86,42.5,70,secondary,4,50,other,park,grass,grassland,other
+Kochstraße,0.8626800000000001,5.446212121212121,19.969444444444445,84,50.5,79,secondary,4,50,other,pitch,residential,wood,other
+Jafféstraße,0.06422,0.4054292929292929,1.486574074074074,19,59,26,secondary,4,50,other,sports_centre,other,unknown,supermarket
+Spandauer Damm,1.31625,8.30965909090909,30.468749999999996,81,55.25,125,secondary,2,50,school,pitch,grass,grassland,other
+Potsdamer Straße,1.3512856169472,8.530843541333333,31.279759651555555,117.8,43.2,87,primary,3,30,other,park,grass,scrub,mall
+Potsdamer Straße,0.3859963566666666,2.436845686026935,8.93510084876543,98,43.666666666666664,30,primary,3,30,other,park,grass,scrub,mall
+Potsdamer Straße,0.5146618088888888,3.249127581369247,11.913467798353906,98,43.666666666666664,40,primary,2,30,other,park,residential,scrub,mall
+Potsdamer Straße,1.7688578309999996,11.167031761363633,40.94578312499999,130,43,103,primary,4,30,parking,park,residential,other,other
+Hauptstraße,4.364696440750001,27.554901772411622,101.03463983217596,102.5,39,307,primary,3,30,shelter,park,other,scrub,supermarket
+Prinzenallee,3.36921,21.270265151515147,77.99097222222221,79.5,50,326,secondary,2,50,school,other,residential,scrub,supermarket
+Seestraße,16.441425,103.79687499999999,380.58854166666663,255.5,54,495,primary,2,50,school,other,other,water,kiosk
+Potsdamer Straße,0.1385653605111111,0.8747813163580245,3.2075314933127568,86,35.666666666666664,11,primary,3,30,other,park,grass,scrub,mall
+Tegeler Weg,1.1934731819999997,7.534552916666664,27.62669402777777,52.25,40,167,secondary,2,50,parking,park,grass,water,other
+Hohenzollerndamm,1.18376416455,7.473258614583333,27.401948253472224,44.5,41,197,secondary,2,50,other,unknown,residential,scrub,other
+Hermannstraße,0.250394991,1.5807764583333332,5.796180347222222,110,30.5,14,secondary,2,30,parking,outdoor_seating,residential,wood,kiosk
+Hermannstraße,0.3040510605000001,1.9195142708333337,7.038218993055557,110,30.5,17,secondary,2,30,parking,outdoor_seating,residential,wood,kiosk
+Hermannstraße,0.35770713000000004,2.2582520833333333,8.280257638888889,110,30.5,20,secondary,2,30,parking,outdoor_seating,residential,wood,kiosk
+Malchower Chaussee,4.0168283,25.35876452020202,92.98213657407408,62.5,48,502,primary,2,60,school,park,other,wood,other
+Potsdamer Straße,1.5858257793750001,10.011526384943181,36.708930078125,42.5,47.5,291,primary,2,50,parking,unknown,grass,grassland,other
+Von-der-Heydt-Straße,2.2810020805000004,14.400265659722224,52.80097408564816,126.5,39,130,secondary,2,50,parking,park,commercial,water,other
+Invalidenstraße,2.046808806,12.921772765151514,47.379833472222224,119,35,116,secondary,4,50,other,playground,commercial,scrub,other
+Goebenstraße,3.807193724425,24.035313916824492,88.1294843616898,66.5,25.5,313,secondary,2,50,shelter,sports_centre,grass,other,other
+Reichpietschufer,1.9290584236444444,12.178399139169471,44.65413017695473,76.33333333333333,30.666666666666668,156,secondary,3,50,bicycle_parking,park,commercial,water,mall
+Schöneberger Ufer,8.472112896,53.48556121212121,196.11372444444444,116,32,464,secondary,3,50,parking,other,residential,water,mall
+Spreeweg,1.5784532866666667,9.96498287037037,36.538270524691356,35,28.333333333333332,264,other,3,50,parking,unknown,grass,wood,supermarket
+Großbeerenstraße,1.6537950000000001,10.440625,38.282291666666666,49.5,53,257,primary,4,50,other,playground,residential,scrub,other
+Leipziger Straße,4.257466315516799,26.877943911090902,98.5524610073333,103.8,40.8,303,primary,3,50,other,park,grass,scrub,other
+Karl-Liebknecht-Straße,7.287735,46.00842803030302,168.69756944444444,200,42,273,primary,3,50,other,park,grass,scrub,other
+Grabbeallee,1.5555207600000003,9.82020681818182,36.007425000000005,50,48,243,primary,1,50,parking,pitch,residential,water,supermarket
+Berliner Straße,4.2726046536,26.973514227272727,98.9028855,81,31,328,primary,2,50,parking,playground,residential,scrub,supermarket
+Stubenrauchstraße,0.37843,2.3890782828282826,8.759953703703703,35.5,50.5,82,secondary,2,50,parking,park,grass,water,supermarket
+Hannoversche Straße,0.3849774863999999,2.4304134242424236,8.911515888888886,86,28,26,secondary,2,30,other,playground,commercial,scrub,kiosk
+Britzer Damm,0.5797027780499999,3.6597397604166657,13.419045788194442,60.5,45.5,74,secondary,2,50,other,playground,other,scrub,other
+Prenzlauer Promenade,0.6539274180000001,4.12832965909091,15.137208750000001,37,44,135,primary,3,70,parking,outdoor_seating,grass,grassland,car
