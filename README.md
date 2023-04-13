@@ -4,8 +4,7 @@
 
 ## Introduction
 
-We introduce the **Zoom City Carbon Model (ZCCM)**, an R-based tool for calculating net of CO2 fluxes from urban areas at high spatial and temporal resolutions. ZCCM incorporates major sources and sinks of carbon in cities, such as road traffic, buildings, human breathing, and vegetation and soils. 
-This document presents **ZCCM::traffic model**, which provides hourly estimates of traffic flow, average speed, and CO2 emissions at the road segment and whole-city level using local traffic data, meteorological data, spatial data, and Machine Learning techniques (ML). The **ZCCM::traffic model** is divided into three files: **Learn ML model**, **Deploy ML model**, and **Emission Geographic Information platform.** The *LearnMLmodel* trains and tests the ML-model, allowing users to assess the performance of the model for traffic estimates based on dataset. The *DeployMLmodel* generates timeseries (.csv) and maps (.multipolylines) of traffic estimates and CO2 emissions, while the [Emission Geographic Information Platform](https://bymaxanjos.github.io/CO2-traffic-emissions/) communicates the outcomes of the ZCCM to users, stakeholders, research community, and public in general. This platform displays the outcomes of ZCCM in an interactive way through zoom CO2 maps and summary statistics of emissions, e.g., dashboard available on this [link](https://bymaxanjos.github.io/CO2-traffic-emissions/).
+We introduce the **Zoom City Carbon Model (ZCCM)**, an R-based tool for calculating net of CO2 fluxes from urban areas at high spatial and temporal resolutions. ZCCM incorporates major sources and sinks of carbon in cities, such as road traffic, buildings, human breathing, and vegetation and soils. This document presents **ZCCM::traffic model**, which provides hourly estimates of traffic flow, average speed, and CO2 emissions at the road segment and whole-city level using local traffic data, meteorological data, spatial data, and Machine Learning techniques (ML). The **ZCCM::traffic model** is divided into three files: **Learn ML model**, **Deploy ML model**, and **Emission Geographic Information platform.** The *LearnMLmodel* trains and tests the ML-model, allowing users to assess the performance of the model for traffic estimates based on dataset. The *DeployMLmodel* generates timeseries (.csv) and maps (.multipolylines) of traffic estimates and CO2 emissions, while the [Emission Geographic Information Platform](https://bymaxanjos.github.io/CO2-traffic-emissions/) communicates the outcomes of the ZCCM to users, stakeholders, research community, and public in general. This platform displays the outcomes of ZCCM in an interactive way through zoom CO2 maps and summary statistics of emissions, e.g., dashboard available on this [link](https://bymaxanjos.github.io/CO2-traffic-emissions/).
 
 The **ZCCM::traffic model** is still undergoing peer-review and should used with caution. Anjos, M.; Meier, F. Zooming into City and tracking CO2 traffic emissions at street level.Carbon Balance and Management(in submission).
 
@@ -13,12 +12,13 @@ The **ZCCM::traffic model** is still undergoing peer-review and should used with
 
 The development of the ZCCM::traffic model was led by [Dr. Max Anjos](https://www.researchgate.net/profile/Max-Anjos/research) and joined by Dr.Fred Meier, and it is hosted at the [Chair of Climatology, Institute of Ecology, Technische Universität Berlin](https://www.klima.tu-berlin.de/index.php?show=home_start&lan=en).
 
-### Funding 
+### Funding
 
 This project is was financed in part by the Coordenação de Aperfeiçoamento de Pessoal de Nível Superior (CAPES) – Finance Code 001, and by the Alexander Von Humboldt Foundation.
 
 ### Contact
-Please feel free to contact us if you have any questions or suggestions by emailing maxanjos@campus.ul.pt. If you are interested in contributing to the development of the model, we welcome you to join our team.
+
+Please feel free to contact us if you have any questions or suggestions by emailing [maxanjos\@campus.ul.pt](mailto:maxanjos@campus.ul.pt). If you are interested in contributing to the development of the model, we welcome you to join our team.
 
 Happy coding!
 
@@ -67,13 +67,13 @@ source("myFolder/ZCCM_functions.R") #runs the ZCCM_functions file, which contain
 
 In this code, we create a ML model to estimate the hourly traffic flow and average speed at street level in Berlin, Germany. The data we are using includes:
 
--  Hourly volume of vehicles and average speed for different types of vehicles from the lane-specific detectors at 583 counting stations from August to September 2022. These data are sourced from the Digital Platform City Traffic Berlin / Traffic Detection Berlin and are named *traffic_berlin_2022_08_09.csv* and *counting_stations_berlin.csv.*
+-   Hourly volume of vehicles and average speed for different types of vehicles from the lane-specific detectors at 583 counting stations from August to September 2022. These data are sourced from the Digital Platform City Traffic Berlin / Traffic Detection Berlin and are named *traffic_berlin_2022_08_09.csv* and *counting_stations_berlin.csv.*
 
--  Hourly meteorological data such as air temperature, relative humidity, sunshine, rainfall, wind direction, and wind speed from the Berlin-Dahlem weather station (latitude 52.4537 and longitude 13.3017) managed by the [German Weather Service Climate Data Center](https://api.viz.berlin.de/daten/verkehrsdetektion). The file is named *weather_berlin_2022_08_09.csv*.
+-   Hourly meteorological data such as air temperature, relative humidity, sunshine, rainfall, wind direction, and wind speed from the Berlin-Dahlem weather station (latitude 52.4537 and longitude 13.3017) managed by the [German Weather Service Climate Data Center](https://api.viz.berlin.de/daten/verkehrsdetektion). The file is named *weather_berlin_2022_08_09.csv*.
 
 -   ESRI Shapefile describing the different land use classes in Berlin from the [Berlin Digital Environmental Atlas](https://stadtentwicklung.berlin.de/umwelt/umweltatlas/edua_index.shtml). The file is named *var1_berlin_landuse.shp.*
 
-The relevant files are stored as *traffic*, *stations*, *weather*, *var1*, *var2* and so on. In the traffic object, the columns for volume of vehicles and average speed should be renamed as *icars* and *ispeed*, respectively.
+The relevant files are stored as *traffic*, *stations*, *weather*. The *var1* or *var2* and so on are variable in which users may include and improve the power of the model for predictions spatial and temporal traffic estimates. In the traffic object, the columns for volume of vehicles and average speed should be renamed as *icars* and *ispeed*, respectively.
 
 ### Load data
 
@@ -416,25 +416,18 @@ raster::writeRaster(CO2_map,"CO2_map_Berlin_2022_08_09.TIF", format="GTiff", ove
 
 ```
 
-### Data - ZCCM::traffic outcomes 
+### Data - ZCCM::traffic outcomes
 
 The ZCCM::traffic dataset consists of three data formats:
 
--  **Geopackage (.gpkg)**: osm_id + hourly (0:23) CO2 emission values per day + road link geometries (The coordinate reference system EPSG:3246)
+-   **Geopackage (.gpkg)**: osm_id + hourly (0:23) CO2 emission values per day + road link geometries (The coordinate reference system EPSG:3246)
 
--  **Raster (.tiff)**: stack raster with hourly (0:23) CO2 emission values per day with 100 meters resolution (EPSG:3246)
+-   **Raster (.tiff)**: stack raster with hourly (0:23) CO2 emission values per day with 100 meters resolution (EPSG:3246)
 
--  **DataStreet (.Rds)**: hourly (0:23) per day with 100 meters resolution
+-   **DataStreet (.Rds)**: hourly (0:23) per day with 100 meters resolution
 
--  **CSV (.csv)**: timeseries of hourly CO2 emissions + attributes 
+-   **CSV (.csv)**: timeseries of hourly CO2 emissions + attributes
 
+## Emission Geographic Information platform
 
-## Emission Geographic Information platform 
-
-text..
-
-
-
-
-
-
+Coming soon...

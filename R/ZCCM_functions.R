@@ -528,7 +528,6 @@ getOSMfeatures <- function(city = NULL, road_class = NULL, city_area = NULL, ish
   join_features <- st_join(join_features, place_osm, st_nearest_feature, st_is_within_distance, dist = 0.1)
   join_features <- st_join(join_features, shop_osm, st_nearest_feature, st_is_within_distance, dist = 0.1)
   join_features <- st_join(join_features, natural_osm, st_nearest_feature, st_is_within_distance, dist = 0.1)
-  join_features <- st_join(join_features, district_osm, st_nearest_feature, st_is_within_distance, dist = 0.1)
   
   road_feat_OSM <- join_features %>%
     mutate(length = round(as.numeric(st_length(geometry)), digits = 0)) %>%
