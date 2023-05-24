@@ -82,7 +82,7 @@ leaflet(imap) %>%
   addProviderTiles("Esri.WorldImagery", group = "Esri.WorldImagery") %>%
   addProviderTiles("CartoDB.DarkMatter", group = "CartoDB.DarkMatter") %>%
   addTiles() %>%
-  #setView(lng = 0, lat = 30, zoom = 2) %>%
+  setView(lng = 13.406318, lat = 52.518582, zoom = 13) %>%
   addPolylines(
     #fillColor = "tCO2",
     color = ~ pal_line(tCO2),
@@ -407,13 +407,13 @@ week %>%
 
 ```
 
-# iDistrict {data-icon="fa-search"}
+iDistrict {data-icon="fa-search"}
+=====================================
 
-Column {data-width=275}
+Column {data-width=400}
 -----------------------------------------------------------------------
 
-### Find your disctrict {data-height=900}
-
+### Find your disctrict
 **Get here:**
 ```{r}
 
@@ -424,20 +424,22 @@ Column {data-width=275}
   # Create filter for year and district These filters will adjust the DT datatable and PLOTLY plot. 
   filter_slider("day", "Day", shared_data, ~day, step = 1)
   filter_select("district", "District", shared_data, ~district, allLevels = TRUE, multiple = TRUE)
+  filter_checkbox(id = "district", label = "Select district", sharedData = shared_data, group = ~district,
+                  columns=2)
   
 
-# Create datatable. 
-datatable(shared_data,
-          rownames = FALSE,
-          colnames = c('tCO2', 'Day', 'District'),
-          class = 'cell-border stripe',
-          width = '100%',
-          extensions = "Scroller",
-          options=list(deferRender = FALSE, 
-                       scrollY = 280, 
-                       scrollCollapse = TRUE,
-                       scroller = TRUE,
-                       dom = 't'))
+# # Create datatable. 
+# datatable(shared_data,
+#           rownames = FALSE,
+#           colnames = c('tCO2', 'Day', 'District'),
+#           class = 'cell-border stripe',
+#           width = '100%',
+#           extensions = "Scroller",
+#           options=list(deferRender = FALSE, 
+#                        scrollY = 280, 
+#                        scrollCollapse = TRUE,
+#                        scroller = TRUE,
+#                        dom = 't'))
 
 # # iDistrict
 # df_sum <- iDistrict_map %>%
@@ -458,11 +460,10 @@ datatable(shared_data,
 
 ```
 
-Column {data-width=725}
------------------------------------------------------------------------
+###
 
-### tCO2 by district {.no-title .colored }
 ```{r}
+
 # Set a random seed. We will do this so that we can reproduce the random sample of colors we will use for our next graph. 
 set.seed(80085)
 
@@ -480,11 +481,15 @@ plot_ly(shared_data, x = ~day, y = ~tCO2,
        layout(paper_bgcolor = 'transparent') %>% 
        add_markers() %>% 
        highlight("plotly_click")
+  
 ```
 
-### 
+Column {data-width=600}
+-----------------------------------------------------------------------
 
-```{r}
+### Interactive map
+
+```{r map}
 
 pal_line <- colorFactor(palette = "viridis", domain = NULL, reverse = TRUE)
 iDistrict_map$labels <- paste0(
@@ -499,7 +504,6 @@ leaflet(iDistrict_map) %>%
   addTiles(group = "OpenStreeMap.Default") %>% 
   addProviderTiles("Esri.WorldImagery", group = "Esri.WorldImagery") %>%
   addProviderTiles("CartoDB.DarkMatter", group = "CartoDB.DarkMatter") %>%
-  #setView(lng = 0, lat = 30, zoom = 2) %>%
   addPolygons(weight = 1, smoothFactor = 0.5,
     #fillColor = "tCO2",
     color = ~ pal_line(tCO2),
@@ -511,10 +515,18 @@ leaflet(iDistrict_map) %>%
   leaflet::addLegend(pal = pal_line, values = "",title = "Traffic tCO2 emissions", group = "Total of tCO2") %>% 
   # layers control
   addLayersControl(
-    baseGroups = c("CartoDB.DarkMatter", "OpenStreeMap.Default", "Esri.WorldImagery"),
+    baseGroups = c("OpenStreeMap.Default", "CartoDB.DarkMatter", "Esri.WorldImagery"),
     position = "topleft",
     options = layersControlOptions(collapsed = TRUE)
   )
+
+```
+
+###
+```{r}
+set.seed(80085)
+plot_ly(shared_data, y = ~tCO2, x = ~district, type = 'bar', color = ~district, colors = sample(colours(), 120)) %>%
+       layout(yaxis = list(categoryorder = "trace"))
 
 ```
 
