@@ -104,25 +104,46 @@ ECO2NEE_2 <- function(x, coeffs) {
 }
 
 #Formula to calculate NEE of CO2 fluxes (Modified2)
-ECO2NEE_local <- function(x, coeffs) {
-  x <- mutate(x, B = 27.588
+ECO2NEE_local <- function(x) {
+  x <- mutate(x, B = -8.25 + 0.35*veg_fraction
               ,a = 0.0002*veg_fraction + 0.0052
-              ,eco = 3.23 * exp(0.03 * airT)
+              ,eco = if_else(Rg<5, 3.23 * exp(0.03 * airT), 0)
               ,o =0.96
-              ,PAR = 0.46*Rg
+              ,PAR = 0.505*Rg
               ,NEE = eco - 1/2*o*(a*PAR+B-((a*PAR+B)^2 -4*a*B*o*PAR)^0.5))
   return(x)
 }
 
+
+#Formula to calculate NEE of CO2 fluxes (Modified2)
+NEEboost <- function(x) {
+  x <- x %>% #filter(veg_fraction > 15) %>% 
+    mutate(B = abs(-8.25 + 0.35*veg_fraction)
+              ,a = 0.0002*veg_fraction + 0.0052 # 0.005 + 0.016*veg_fraction
+              #,yc = if_else(Rg < 20, REddyProc::fLloydTaylor(10, 330, airT + 273.15)[1], 0)
+              #,Reco_night = ifelse(Rg <20, 1.3 * (exp(230 * (1/(15 - -46.02) - 1/(airT - -46.02))))*(veg_fraction/100), 0) 
+              ,Reco = 1.3 * (exp(230 * (1/(15 - -46.02) - 1/(airT - -46.02))))*(veg_fraction/100)   
+              #,yc = 1.3 * (exp(230 * (1/(15 - -46.02) - 1/(airT - -46.02))))*(veg_fraction/100)
+              ,o =0.96
+              ,PAR = 0.505*Rg
+              ,NEE = Reco - 1/2*o*(a*PAR+B-((a*PAR+B)^2 -4*a*B*o*PAR)^0.5)
+              #,GPP1 = - 1/2*o*(a*PAR+B-((a*PAR+B)^2 -4*a*B*o*PAR)^0.5)
+              #,GPP = ifelse(GPP1>0, 0, GPP1)
+              #,NEE = Reco+GPP)
+    )
+  return(x)
+}
+
 importGRmax <- function(file = myfilename){
+  gr_df <- janitor::clean_names(file)
   gr_df <- str_split_fixed(file$time, ":", 2)
   gr_df <-  tibble("date" = unlist(gr_df[,1]),
                    "hour" = unlist(gr_df[,2])) %>%
     mutate(date=as.Date(anytime::anydate(date), format="%Y-%m-%d")) %>%
     mutate(date= as.POSIXct(paste(date, hour),format="%Y-%m-%d %H"))
   my_gr <- bind_cols(file, gr_df) %>% janitor::clean_names() %>%
-    rename(global_rad = g_i, hour_sun = h_sun, airT = t2m, ws = ws10m) %>%
-    dplyr::select(date, global_rad, hour_sun, airT, ws)
+    rename(Rg = g_i, sun = h_sun, airT = t2m, ws = ws10m) %>%
+    dplyr::select(date, Rg, sun, airT, ws)
 
   return(my_gr)
 }
@@ -407,33 +428,33 @@ getOSMfeatures <- function(city = NULL, road_class = NULL, city_area = NULL, ish
     tmap_save(amenity_map, file, asp = 0)
   }
 
-  # building <- getbb(city) %>% opq() %>% add_osm_feature(key = "building") %>% osmdata_sf()
-  # building_osm  <- building$osm_polygons %>% dplyr::select(building, geometry) %>%
-  #   st_as_sf() %>% st_transform(crs = 4326) %>%
-  #   sf::st_intersection(city_area)
-  # rm(building)
-  # 
-  # if(ishp == TRUE) {
-  #   file <- paste0(folder,city,"_building_osm.shp")
-  #   st_write(building_osm, file, append = FALSE)
-  # }
-  # 
-  # if(iplot == TRUE) {
-  #   building_map <- building_osm %>%
-  #     tm_shape() +
-  #     tm_polygons("building", border.col = NULL) +
-  #     tm_layout(bg.color = "#F6F6F6" #legend.outside.position = "bottom",
-  #     ) +
-  #     tm_legend(title = city) +
-  #     tm_credits("Source: ©ZoomCityCarbonModel, https://github.com/ByMaxAnjos\nData: OpenStreetMap contributors, 2017", size = 0.7, position=c("left","bottom"))+
-  #     tm_compass(type="arrow", position=c("right", "bottom"), show.labels = 1) +
-  #     tm_scale_bar(lwd = 1, color.dark = "black", color.light = "white")+
-  #     tm_graticules(lwd = .1) +
-  #     qtm(city_area, fill = NULL)
-  # 
-  #   file <- paste0(folder,city,"_building_osm.png")
-  #   tmap_save(building_map, file, asp = 0)
-  # }
+  building <- getbb(city) %>% opq() %>% add_osm_feature(key = "building") %>% osmdata_sf()
+  building_osm  <- building$osm_polygons %>% dplyr::select(building, geometry) %>%
+    st_as_sf() %>% st_transform(crs = 4326) %>%
+    sf::st_intersection(city_area)
+  rm(building)
+
+  if(ishp == TRUE) {
+    file <- paste0(folder,city,"_building_osm.shp")
+    st_write(building_osm, file, append = FALSE)
+  }
+
+  if(iplot == TRUE) {
+    building_map <- building_osm %>%
+      tm_shape() +
+      tm_polygons("building", border.col = NULL) +
+      tm_layout(bg.color = "#F6F6F6" #legend.outside.position = "bottom",
+      ) +
+      tm_legend(title = city) +
+      tm_credits("Source: ©ZoomCityCarbonModel, https://github.com/ByMaxAnjos\nData: OpenStreetMap contributors, 2017", size = 0.7, position=c("left","bottom"))+
+      tm_compass(type="arrow", position=c("right", "bottom"), show.labels = 1) +
+      tm_scale_bar(lwd = 1, color.dark = "black", color.light = "white")+
+      tm_graticules(lwd = .1) +
+      qtm(city_area, fill = NULL)
+
+    file <- paste0(folder,city,"_building_osm.png")
+    tmap_save(building_map, file, asp = 0)
+  }
 
   place <- getbb(city)  %>% opq() %>% add_osm_feature(key = "place") %>% osmdata_sf()
   place_osm  <- place$osm_polygons %>% dplyr::select(place, geometry) %>%
@@ -882,8 +903,16 @@ PrepDash <- function(city = "Berlin", ipath = "output_citystreet/", road = iNetR
     # Create the folder if it does not exist
     dir.create(folder)
   }
-  
-  
+  #get shp RIO
+  shp_verify=osmdata::getbb(city, format_out = "sf_polygon", limit = 1)$polygon
+  if(is.null(shp_verify)) {
+    my_area <- osmdata::getbb(city, format_out = "sf_polygon", limit = 1)$multipolygon# Try this first option and plot to see the city 
+    my_area <- st_make_valid(my_area)
+  } else {
+    my_area <- osmdata::getbb(city, format_out = "sf_polygon", limit = 1)$polygon# Try this first option and plot to see the city 
+    my_area <- st_make_valid(my_area)
+  }
+
   # iMap
   imap <- df %>%
     group_by(osm_id) %>%
@@ -1017,14 +1046,18 @@ PrepDash <- function(city = "Berlin", ipath = "output_citystreet/", road = iNetR
     summarise(ktCO2 = round(sum(ECO2_gmh)/1000/1000, digits= 2))
   file <- paste0(folder,"week.csv")
   write_csv(week, file)
-  
-  #iDistrict
-  district <- getbb(city) %>% opq() %>% add_osm_feature(key = "admin_level", value = "9") %>% # level 9 is for districts
+
+
+  #iDistrict map
+  district <- osmdata::getbb(city) %>% opq() %>% add_osm_feature(key = "admin_level", value = "9") %>% # level 9 is for districts
     osmdata_sf()
   district_osm <- district$osm_multipolygons %>%
     dplyr::select(osm_id, name, geometry) %>% rename(district = name) %>% 
-    st_as_sf() %>% st_transform(crs = 4326)
-  rm(district)
+    st_intersection(my_area) %>% 
+    st_make_valid() 
+  district_osm_type <- st_geometry_type(district_osm)
+  district_osm <- district_osm[district_osm_type == "POLYGON",]
+  rm(district, district_osm_type)
   iDistrict_map <- df %>%
     group_by(osm_id) %>%
     summarise(tCO2 = round(sum(ECO2_gmh)/1000, digits = 2)) %>%
@@ -1039,9 +1072,109 @@ PrepDash <- function(city = "Berlin", ipath = "output_citystreet/", road = iNetR
   file <- paste0(folder,"iDistrict.shp")
   st_write(iDistrict_map, file, append=FALSE)
   
+  #create a tibble for our line plot
+  iday <- df %>% distinct(date_day, .keep_all = F)
+  iday <- iday$date_day
+  iDistrict_tibble <- pbapply::pblapply(1:length(iday), FUN = function(i)
+      dplyr::select(df, osm_id, date_day,ECO2_gmh) %>% 
+      dplyr::filter(date_day == paste0(iday[i])) %>% 
+      group_by(osm_id, date_day) %>%
+      summarise(tCO2 = round(sum(ECO2_gmh)/1000, digits = 2), .groups = "drop") %>%
+      inner_join(road, by= "osm_id") %>%
+      dplyr::select(tCO2, geometry) %>%
+      st_as_sf() %>%
+      st_transform(crs = 4326) %>%
+      raster::aggregate(district_osm, FUN=sum) %>% as_tibble() %>% dplyr::select(-geometry) %>%
+      mutate(day = paste0(iday[i])) %>% 
+      bind_cols(district_osm %>% as_tibble() %>% dplyr::select(-geometry))
+    ) 
+  
+  iDistrict_tibble <- do.call(rbind.data.frame, iDistrict_tibble) %>% 
+    dplyr::select(-osm_id)
+  file <- paste0(folder,"iDistrict_table.csv")
+  write_csv(iDistrict_tibble, file)
+  
+  
   return()
 }
 
 
+#Interpolate Air temperature
 
-
+getLCZparameters <- function(lcz_map = lcz_map) {
+  #lcz.id <- c(seq(1, 10, 1), seq(101, 107))
+  lcz <- c(seq(1, 10, 1), seq(11, 17))
+  lcz.code <- c(seq(1, 10, 1), "A", "B", "C", "D", "E", "F", "G")
+  # lcz.name <- c('compact_high-rise', 'compact_midrise', 'compact_low-rise',
+  #               'open_high-rise', 'open_midrise', 'open_low-rise',
+  #               'lightweight_low-rise', 'large_low-rise', 'sparsely_built',
+  #               'heavy_industry', 'dense_trees', 'scattered_trees', 'bush_scrub',
+  #               'low_plants', 'bare_rock_paved', 'bare_soil_sand', 'water')
+  
+  lcz.name <- c("Compact highrise", "Compact midrise", "Compact lowrise", "Open highrise",
+                "Open midrise", "Open lowrise", "Lightweight low-rise", "Large lowrise",
+                "Sparsely built", "Heavy Industry", "Dense trees", "Scattered trees",
+                "Bush, scrub", "Low plants", "Bare rock or paved", "Bare soil or sand", "Water")
+  lcz.col <- c("#910613", "#D9081C", "#FF0A22", "#C54F1E", "#FF6628", "#FF985E",
+               "#FDED3F", "#BBBBBB", "#FFCBAB", "#565656", "#006A18", "#00A926",
+               "#628432", "#B5DA7F", "#000000", "#FCF7B1", "#656BFA")
+  
+  #LCZ parameters
+  SVF.min <- c(0.2, 0.3, 0.2, 0.5, 0.5, 0.6, 0.2, 0.75, 0.85, 0.6, 0.35, 0.5, 0.7, rep(0.9, 4))
+  SVF.max <- c(0.4, 0.6, 0.6, 0.7, 0.8, 0.9, 0.5, 0.75, 0.85, 0.9, 0.35, 0.8, 0.9, rep(0.9, 4))
+  aspect.ratio.min <- c(3, 0.75, 0.75, 0.75, 0.3, 0.3, 1, 0.1, 0.1, 0.2, 1.5, 0.25, 0.25, rep(0.1, 4))
+  aspect.ratio.max <- c(3, 2, 1.5, 1.25, 0.75, 0.75, 2, 0.3, 0.25, 0.5, 1.5, 0.75, 1.0, rep(0.1, 4))
+  build.frac.min <- c(40, 40, 40, rep(20,3), 60, 30, 10, 20, rep(9, 7))
+  build.frac.max <- c(60, 70, 70, rep(40,3), 90, 50, 20, 30, rep(9, 7))
+  imp.frac.min <- c(40, 40, 40, rep(20, 3), 60, 30, 10, 20, rep(0, 7))
+  imp.frac.max <- c(60, 70, 70, rep(40, 3), 90, 50, 20, 30, rep(10, 7))
+  veg.frac.max <- c(10, 20, 30, 40, 40, 60, 30, 20, 80, 50, rep(100, 4), 10, 100, 100)
+  veg.frac.min <- c(0, 0, 0, 30, 20, 30, 0, 0, 60, 40, 90, 90, 90, 90, 0, 90, 90)
+  tree.frac.min <- c(rep(0, 10), 90, 90, rep(0, 5))
+  tree.frac.max <- c(rep(0, 10), 100, 100, rep(0, 5))
+  height.roug.min <- c(26, 10, 3, 26, 10, 3, 2, 3, 3, 5, 3, 3, 2.9, 0.9, 0.24, 0.23,  0)
+  height.roug.max <- c(26, 25, 10, 26, 25, 10, 4, 10, 10, 15, 30, 15, 2.9, 0.9, 0.24, 0.23, 0)
+  terra.roug.min <- c(8, 6, 6, 7, 5, 5, 4, 5, 5, 5, 8, 5, 4, 3, 1, 1, 1)
+  terra.roug.max <- c(8, 7, 6, 8, 6, 6, 5, 5, 6, 6, 8, 6, 5, 4, 2, 2, 1)
+  surf.admit.min <- c(1.500, 1.500, 1.200, 1.400, 1.400, 1.200, 800, 1.200, 1.000, 1.000, 0, 1.000, 700, 1.200, 1.200, 600, 1.500)
+  surf.admit.max <- c(1.800, 2.000, 1.800, 1.800, 2.000, 1.800, 1.500, 1.800, 1.800, 2.5000, 0, 1.800, 1.500, 1.600, 2.500, 1.400, 1.500)
+  surf.albedo.min <- c(rep(0.10, 3), rep(0.12, 3), rep(0.15, 2), rep(0.12, 2), 0.10, rep(0.15, 4), 0.20, 0.02)
+  surf.albedo.max <- c(rep(0.20, 3), rep(0.25, 3), 0.35, 0.25, 0.25, 0.20, 0.20, 0.25, 0.30, 0.25, 0.30, 0.35, 0.10)
+  antrop.heat.min <- c(50, 74, 74, 49, 24, 24, 34, 49, 9, 310, rep(0, 7))
+  antrop.heat.max <- c(300, 74, 74, 49, 24, 24, 34, 49, 9, 310, rep(0, 7))
+  
+  # lcz.col <- c('#8c0000', '#d10000', '#ff0100', '#be4d01', '#ff6602', '#ff9955',
+  #              '#faee05', '#bcbcbc', '#ffccaa', '#555555', '#006a01', '#01aa00',
+  #              '#648526', '#b9db79', '#000000', '#fbf7ae', '#6a6aff')
+  lcz.df <- data.frame(lcz, lcz.name, lcz.code, lcz.col, SVF.min, SVF.max, aspect.ratio.min, aspect.ratio.max, build.frac.min, build.frac.max,
+                       imp.frac.min, imp.frac.max, veg.frac.min, veg.frac.max, tree.frac.min, tree.frac.max,
+                       height.roug.min, height.roug.max, terra.roug.min, terra.roug.max, surf.admit.min, surf.admit.max, surf.albedo.min, surf.albedo.max,
+                       antrop.heat.min, antrop.heat.max,
+                       stringsAsFactors = F) %>%
+    mutate(z0 = ifelse(lcz.code %in% c("G"), 0.0002, #Get z0
+                       ifelse(lcz.code %in% c("E", "F"), 0.0005,
+                              ifelse(lcz.code=="D", 0.03,
+                                     ifelse(lcz.code %in% c(7, "C"), 0.10,
+                                            ifelse(lcz.code %in% c(8, "B"), 0.25,
+                                                   ifelse(lcz.code %in% c(2, 3, 5, 6, 9, 10), 0.5,
+                                                          ifelse(lcz.code %in% c(2, 4), 1.0,
+                                                                 ifelse(lcz.code %in% c(1, "A"), 2, ""))))))))) %>%
+    mutate(SVF.mean = round((SVF.min + SVF.max)/2, digits = 2),
+           aspect.ratio.mean = (aspect.ratio.min + aspect.ratio.max)/2,
+           build.frac.mea = (build.frac.min + build.frac.max)/2,
+           imp.frac.mean = (imp.frac.min + imp.frac.max)/2,
+           veg.frac.mean = (veg.frac.min + veg.frac.max)/2,
+           tree.frac.mean = (tree.frac.min +tree.frac.max)/2,
+           height.roug.mean = (height.roug.min + height.roug.max)/2,
+           terra.roug.mean = (terra.roug.min + terra.roug.max)/2,
+           surf.admit.mean = (surf.admit.min + surf.admit.max)/2,
+           surf.albedo.mean = (surf.albedo.min + surf.albedo.max)/2,
+           antrop.heat.mean = (antrop.heat.min + antrop.heat.max)/2
+    )
+  #Preprocessing raster
+  names(lcz_map) <- "lcz"
+  lcz_shp <- terra::as.polygons(rast(lcz_map)) %>% st_as_sf()
+  lcz_result <- inner_join(lcz_shp, lcz.df, by="lcz")
+  
+  return(lcz_result)
+}

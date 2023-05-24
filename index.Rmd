@@ -45,6 +45,8 @@ hour <- fread("dashboard/hour.csv")
 find_street <- fread("dashboard/find_street.csv")
 week <- fread("dashboard/week.csv")
 iDistrict_map <- st_read("dashboard/iDistrict.shp")
+iDistrict_tibble <- fread("dashboard/iDistrict_table.csv") %>% 
+  dplyr::select(-osm_id)
 
 ```
 
@@ -405,33 +407,82 @@ week %>%
 
 ```
 
-# iDistrict {data-icon="fa-map"}
+# iDistrict {data-icon="fa-search"}
 
-### Emitter disctrict {data-height=500}
+Column {data-width=275}
+-----------------------------------------------------------------------
 
+### Find your disctrict  {data-height=900}
+
+**Get here:**
 ```{r}
 
-# iDistrict
+# Create shared data that will be used to link filters, data table, and line plot. 
+  iDistrict_tibble$day <- as.numeric(iDistrict_tibble$day)
+  shared_data <- SharedData$new(iDistrict_tibble, group = 'hello')
+  
+  # Create filter for year and district These filters will adjust the DT datatable and PLOTLY plot. 
+  filter_slider("day", "Day", shared_data, ~day, step = 1)
+  filter_select("district", "District", shared_data, ~district, allLevels = TRUE, multiple = TRUE)
+  
 
-df_sum <- iDistrict_map %>%
-  group_by(district) %>%
-  summarize(ktCO2 = round(sum(tCO2)/1000, digits = 2)) %>% 
-  na.omit()
+# Create datatable. 
+datatable(shared_data,
+          rownames = FALSE,
+          colnames = c('tCO2', 'Day', 'District'),
+          class = 'cell-border stripe',
+          width = '100%',
+          extensions = "Scroller",
+          options=list(deferRender = FALSE, 
+                       scrollY = 280, 
+                       scrollCollapse = TRUE,
+                       scroller = TRUE,
+                       dom = 't'))
 
-highchart() %>%
-  hc_chart(polar = TRUE, type = "column") %>%
-  hc_title(text = "Traffic emissions by district in ktCO2", 
-           style = list(fontSize = '25px', fontWeight = 'bold')) %>%
-  hc_xAxis(categories = df_sum$district, tickmarkPlacement = "on", lineWidth = 0) %>%
-  hc_yAxis(gridLineInterpolation = "polygon", lineWidth = 0, min = 0,  title = list(text = "")) %>%
-  hc_add_series(data = df_sum$ktCO2, name = "ktCO2/month") %>% 
-  hc_credits(enabled = TRUE, text = '@ZoomCityCarbonModel') %>% 
-    hc_add_theme(hc_theme_ffx())%>% 
-  hc_exporting(enabled = TRUE)
+# # iDistrict
+# df_sum <- iDistrict_map %>%
+#   group_by(district) %>%
+#   summarize(ktCO2 = round(sum(tCO2)/1000, digits = 2)) %>% 
+#   na.omit()
+# 
+# highchart() %>%
+#   hc_chart(polar = TRUE, type = "column") %>%
+#   hc_title(text = "Traffic emissions by district in ktCO2", 
+#            style = list(fontSize = '25px', fontWeight = 'bold')) %>%
+#   hc_xAxis(categories = df_sum$district, tickmarkPlacement = "on", lineWidth = 0) %>%
+#   hc_yAxis(gridLineInterpolation = "polygon", lineWidth = 0, min = 0,  title = list(text = "")) %>%
+#   hc_add_series(data = df_sum$ktCO2, name = "ktCO2/month") %>% 
+#   hc_credits(enabled = TRUE, text = '@ZoomCityCarbonModel') %>% 
+#     hc_add_theme(hc_theme_ffx())%>% 
+#   hc_exporting(enabled = TRUE)
 
 ```
 
-### Emission totals per district {data-height=500}
+Column {data-width=725}
+-----------------------------------------------------------------------
+
+### tCO2 by district {.no-title .colored }
+```{r}
+# Set a random seed. We will do this so that we can reproduce the random sample of colors we will use for our next graph. 
+set.seed(80085)
+
+# Create line graph. 
+plot_ly(shared_data, x = ~day, y = ~tCO2, 
+       color = ~district, colors = sample(colours(), 120),
+       type = 'scatter', mode = 'lines',
+       hoverinfo = 'text', text = ~paste("District: ", 
+                                         district, '<br>Day: ', day, "<br>tCO2: ", tCO2)) %>%
+       layout(showlegend = FALSE,
+              title = "trafiic emissions by Disrrict",
+              xaxis = list(title = "Day"),
+              yaxis = list(title = " tCO2")) %>%
+       layout(plot_bgcolor = 'transparent') %>% 
+       layout(paper_bgcolor = 'transparent') %>% 
+       add_markers() %>% 
+       highlight("plotly_click")
+```
+
+### 
 
 ```{r}
 
@@ -466,7 +517,6 @@ leaflet(iDistrict_map) %>%
   )
 
 ```
-
 
 # About {data-icon="fa-info-circle"}
 
