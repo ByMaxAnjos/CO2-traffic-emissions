@@ -6,8 +6,7 @@
 
 We introduce the **Zoom City Carbon Model (ZCCM)**, an R-based tool for calculating net of CO2 fluxes from urban areas at high spatial and temporal resolutions. ZCCM incorporates major sources and sinks of carbon in cities, such as road traffic, buildings, human breathing, and vegetation and soils. This document presents **ZCCM::traffic model**, which provides hourly estimates of traffic flow, average speed, and CO2 emissions at the road segment and whole-city level using local traffic data, meteorological data, spatial data, and Machine Learning techniques (ML). The **ZCCM::traffic model** is divided into three files: **Learn ML model**, **Deploy ML model**, and **Emission Geographic Information platform.** The *LearnMLmodel* trains and tests the ML-model, allowing users to assess the performance of the model for traffic estimates based on dataset. The *DeployMLmodel* generates timeseries (.csv) and maps (.multipolylines) of traffic estimates and CO2 emissions, while the [Emission Geographic Information Platform](https://bymaxanjos.github.io/CO2-traffic-emissions/) communicates the outcomes of the ZCCM to users, stakeholders, research community, and public in general. This platform displays the outcomes of ZCCM in an interactive way through zoom CO2 maps and summary statistics of emissions, e.g., dashboard available on this [link](https://bymaxanjos.github.io/CO2-traffic-emissions/).
 
-The **ZCCM::traffic model** is still undergoing peer-review and should used with caution. 
-Methodology is based on Anjos, M.; Meier, F. Zooming into City and tracking CO2 traffic emissions at street level. Carbon Balance and Management(submitted).
+The **ZCCM::traffic model** is still undergoing peer-review and should used with caution. Methodology is based on Anjos, M.; Meier, F. Zooming into City and tracking CO2 traffic emissions at street level. Carbon Balance and Management(submitted).
 
 ### People
 
@@ -431,4 +430,4 @@ The ZCCM::traffic dataset consists of three data formats:
 
 ## Emission Geographic Information platform
 
-Coming soon...
+Coming soon.

@@ -1086,7 +1086,8 @@ PrepDash <- function(city = "Berlin", ipath = "output_citystreet/", road = iNetR
       st_transform(crs = 4326) %>%
       raster::aggregate(district_osm, FUN=sum) %>% as_tibble() %>% dplyr::select(-geometry) %>%
       mutate(day = paste0(iday[i])) %>% 
-      bind_cols(district_osm %>% as_tibble() %>% dplyr::select(-geometry))
+      bind_cols(district_osm %>% as_tibble() %>% dplyr::select(-geometry)) %>% 
+      dplyr::select(-osm_id)
     ) 
   
   iDistrict_tibble <- do.call(rbind.data.frame, iDistrict_tibble) %>% 

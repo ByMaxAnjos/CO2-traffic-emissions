@@ -412,7 +412,7 @@ week %>%
 Column {data-width=275}
 -----------------------------------------------------------------------
 
-### Find your disctrict  {data-height=900}
+### Find your disctrict {data-height=900}
 
 **Get here:**
 ```{r}
