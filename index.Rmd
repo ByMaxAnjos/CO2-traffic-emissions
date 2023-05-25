@@ -67,8 +67,10 @@ This **Flexdashboard R** leverages road traffic estimates from the ZCCM::traffic
 ```{r fig.height=5}
 
 # Mapping 1
+#imap$col_scale <- log(1 + imap$tCO2)
+pal_line <- colorFactor(palette = "Spectral", reverse = TRUE, domain = NULL)
+#pal_line <- colorNumeric(reverse = TRUE, palette = "Spectral", domain = NULL)
 
-pal_line <- colorFactor(palette = "plasma", domain = NULL)
 imap$labels <- paste0(
   "<strong> name: </strong> ",
   imap$name, "<br/> ",
@@ -86,15 +88,17 @@ leaflet(imap) %>%
   addPolylines(
     #fillColor = "tCO2",
     color = ~ pal_line(tCO2),
-    fillOpacity = 0.8,
+    #fillOpacity = 0.7,
     label = ~labels,
     highlight = highlightOptions(
       color = "black",
       bringToFront = TRUE
     )
   ) %>%
-  leaflet::addLegend(pal = pal_line, values = "", opacity = 0.8, title = "tCO2/ m2/month", group = "Total of tCO2") %>% 
-  # layers control
+  # leaflet::addLegend("bottomright",pal = pal_line, values = ~col_scale, title = "tCO2/m2/month",
+  #                    labFormat = labelFormat(prefix = "  > " , transform =  function(x) exp(x) - 1 , digits = 0)) %>% 
+  leaflet::addLegend("bottomright", pal = pal_line, values = "", title = "tCO2/m2/month") %>%
+  # layers control 
   addLayersControl(
     baseGroups = c("OpenStreeMap.Default", "Esri.WorldImagery", "CartoDB.DarkMatter"),
     position = "topleft",
