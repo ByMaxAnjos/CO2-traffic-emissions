@@ -50,19 +50,19 @@ iDistrict_tibble <- fread("dashboard/iDistrict_table.csv") %>%
 
 ```
 
-Sidebar {.sidebar}
-=====================================
+# Sidebar {.sidebar}
+
 The **Zoom City Carbon Model - ZCCM** is a multi-layered, bottom-up approach for mapping and quantifying the total CO2 emissions in a city at high spatial and temporal resolutions, down to 100-meter grids or street level, and sectorial resolution. The model identifies major CO2 emitters and sinks, such as road traffic vehicles, building energy consumption, human respiration, and vegetation/soils, and estimates their emission patterns and changes over time.
 
 This **Emission Geographic Information platform** is designed to communicate the outcomes of the {ZCCM} to users, stakeholders, the research community, and the public in general. It enables the visualization of zoom CO2 maps and summary statistics of emissions in an interactive way.
 
-This **Flexdashboard R** leverages road traffic estimates from the ZCCM::traffic model https://github.com/ByMaxAnjos/CO2-traffic-emissions to showcase the spatio-temporal variability of CO2 emissions at the city level. With this tool, users can explore detailed street-level emissions, emissions associated with Open Street Map features, and temporal patterns such as hourly time series, daily cycles, and monthly totals. 
+This **Flexdashboard R** leverages road traffic estimates from the ZCCM::traffic model <https://github.com/ByMaxAnjos/CO2-traffic-emissions> to showcase the spatio-temporal variability of CO2 emissions at the city level. With this tool, users can explore detailed street-level emissions, emissions associated with Open Street Map features, and temporal patterns such as hourly time series, daily cycles, and monthly totals.
 
 **Author: Max Anjos, 2023.** [maxanjos\@campus.ul.pt](mailto:maxanjos@campus.ul.pt){.email}, Institute of Ecology Chair of Climatology, Technical University of Berlin.
 
 # iMap {data-icon="fa-map"}
 
-### Total Emissions {data-height=500}
+### Total Emissions {data-height="500"}
 
 ```{r fig.height=5}
 
@@ -95,9 +95,9 @@ leaflet(imap) %>%
       bringToFront = TRUE
     )
   ) %>%
-  # leaflet::addLegend("bottomright",pal = pal_line, values = ~col_scale, title = "tCO2/m2/month",
+  # leaflet::addLegend("bottomright",pal = pal_line, values = ~col_scale, title = "tCO2/month",
   #                    labFormat = labelFormat(prefix = "  > " , transform =  function(x) exp(x) - 1 , digits = 0)) %>% 
-  leaflet::addLegend("bottomright", pal = pal_line, values = "", title = "tCO2/m2/month") %>%
+  leaflet::addLegend("bottomright", pal = pal_line, values = "", title = "tCO2/month") %>%
   # layers control 
   addLayersControl(
     baseGroups = c("OpenStreeMap.Default", "Esri.WorldImagery", "CartoDB.DarkMatter"),
@@ -411,14 +411,14 @@ week %>%
 
 ```
 
-iDistrict {data-icon="fa-search"}
-=====================================
+# iDistrict {data-icon="fa-search"}
 
-Column {data-width=400}
------------------------------------------------------------------------
+## Column {data-width="400"}
 
 ### Find your disctrict
+
 **Get here:**
+
 ```{r}
 
 # Create shared data that will be used to link filters, data table, and line plot. 
@@ -464,7 +464,7 @@ Column {data-width=400}
 
 ```
 
-###
+### 
 
 ```{r}
 
@@ -488,8 +488,7 @@ plot_ly(shared_data, x = ~day, y = ~tCO2,
   
 ```
 
-Column {data-width=600}
------------------------------------------------------------------------
+## Column {data-width="600"}
 
 ### Interactive map
 
@@ -526,7 +525,8 @@ leaflet(iDistrict_map) %>%
 
 ```
 
-###
+### 
+
 ```{r}
 set.seed(80085)
 plot_ly(shared_data, y = ~tCO2, x = ~district, type = 'bar', color = ~district, colors = sample(colours(), 120)) %>%
@@ -536,10 +536,41 @@ plot_ly(shared_data, y = ~tCO2, x = ~district, type = 'bar', color = ~district, 
 
 # About {data-icon="fa-info-circle"}
 
-## Column
+Row {data-height=900}
+-----------------------------------------------------------
 
-### 
+### about txt {.no-title .no-padding .colored}
 
-**Thank You** for checking out my first ZoomCityCO2model Interactive FlexDashboard in R!
+<h4>**Related Works**</h4>
 
-Any feedback is welcome!
+* Anjos, M.; Meier, F. Zooming into City and tracking CO2 traffic emissions at street level. Carbon Balance and Management(submitted).
+* Anjos, M.; Meier, F. City Carbon Budget and hourly net CO2 fluxes at 0.01º resolution for informed climate action (in preparation).
+
+<h4>**Data Source**</h4>
+
+* Traffic counting data -  https://api.viz.berlin.de/daten/verkehrsdetektion; 
+* Open Street Map features - https://wiki.openstreetmap.org/wiki/Map_features; 
+* Berlin Atlas data such as land use, density population, and high-level daily mean traffic volumes - https://fbinter.stadt-berlin.de/fb/index.jsp;
+* Meteorological data of the German Weather Service Climate Data Center - https://opendata.dwd.de/climate_environment/CDC/; 
+
+<h4>**People**</h4>
+
+The development of this interative platform was led by [Dr. Max Anjos](https://www.researchgate.net/profile/Max-Anjos/research) and joined by Dr.Fred Meier, and it is hosted at the [Chair of Climatology, Institute of Ecology, Technische Universität Berlin](https://www.klima.tu-berlin.de/index.php?show=home_start&lan=en).
+
+<h4>**Funding**</h4>
+
+This project is was financed in part by the Coordenação de Aperfeiçoamento de Pessoal de Nível Superior (CAPES) – Finance Code 001, and by the Alexander Von Humboldt Foundation.
+
+<h4>**Inspiration**</h4>
+
+After being inspired by Tavoosi's amazing interactive dashboard on suicide data (available at https://www.kaggle.com/tavoosi/suicide-data-full-interactive-dashboard) and by DSangeetha's nice dashboard on Zomato Restaurants Data (https://www.kaggle.com/code/devisangeetha/interactive-flexdashboard-in-r/report), this dashboard was created.
+
+<hr>
+
+<center>
+**Thanks** for visiting my first interactive FlexDashboard in R, the ZoomCityCarbonModel. 
+Your feedback is greatly appreciated and will help me continue to improve the dashboard's functionality and design.
+
+
+
+
