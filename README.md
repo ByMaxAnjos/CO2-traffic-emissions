@@ -14,7 +14,7 @@ The development of the ZCCM::traffic model was led by [Dr. Max Anjos](https://ww
 
 ### Funding
 
-This project is was financed in part by the Coordenação de Aperfeiçoamento de Pessoal de Nível Superior (CAPES) – Finance Code 001, and by the Alexander Von Humboldt Foundation.
+This project was financed in part by the Coordenação de Aperfeiçoamento de Pessoal de Nível Superior (CAPES) – Finance Code 001, and by the Alexander Von Humboldt Foundation.
 
 ### Contact
 
