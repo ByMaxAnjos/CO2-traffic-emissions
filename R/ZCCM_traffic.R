@@ -24,28 +24,50 @@ source("R/ZCCM_functions.R") #runs the ZCCM_functions file, which contains all s
 #======================================================================
 
 #Load data
-traffic <- fread("Data/traffic_berlin_2022_08_09.csv") %>% 
+traffic <- fread("Data/traffic_berlin_2022_08_09.csv") 
+
+traffic <- traffic %>%
+  #rename(icars = flow_automovel, ispeed = speed_automovel) %>% #Rename the type of cars and speed
+  #group_by(Longitude, Latitude) %>% mutate(id= cur_group_id()) %>% #Create a id for each stations based on latitude and longitue  
   dplyr::select(date, id, icars, ispeed)
 
-stations_csv <- fread("Data/counting_stations_berlin.csv", dec=",") #Read cvs counting stations. 
-stations <- sf::st_as_sf(stations_csv, coords = c("Longitude", "Latitude"), crs=4326) #Convert stations csv file to shapefile based on column Latitude and Longitude.
+#Get station shp
+# stations_csv <- fread("Data/counting_stations_berlin.csv", dec=",") #Read cvs counting stations. 
+# stations <- sf::st_as_sf(stations_csv, coords = c("Longitude", "Latitude"), crs=4326)
+stations <- traffic %>%
+  distinct(Longitude, Latitude, .keep_all = TRUE) %>% #Eleminate duplicity 
+  sf::st_as_sf(coords = c("Longitude", "Latitude"), crs=4326) #Convert stations csv file to shapefile based on column Latitude and Longitude.
 
+tmap_mode("view")
+qtm(stations)#Plot map
+
+#Get meteorological data
 weather <- fread("Data/weather_berlin_2022_08_09.csv") %>%  #Read weather csv file
   dplyr::select(-V1) #Delete column
 
+#Load other variables named as var1, var2 var3 ....
 var1 <- sf::read_sf("shps/var1_berlin_landuse.shp")
+qtm(var1, fill="lndsAtl")#Plot map
 
-#Get OSM features
+# Get study area polygon from OpenStreetMap data
 icity <- "Berlin"
+shp_verify <- osmdata::getbb(city, format_out = "sf_polygon", limit = 1, featuretype = "city")
+# Check if polygon was obtained successfully
+if(!is.null(shp_verify$geometry) & !inherits(shp_verify, "list")) {
+  study_area <- shp_verify$geometry
+  study_area <- st_make_valid(study_area) %>%
+    st_as_sf() %>% 
+    st_transform(crs = "+proj=longlat +datum=WGS84 +no_defs")
+} else {
+  study_area <- shp_verify$multipolygon
+  study_area <- st_make_valid(study_area) %>%
+    st_as_sf() %>%
+    st_transform(crs="+proj=longlat +datum=WGS84 +no_defs")
+}
 
-my_area <- osmdata::getbb(icity, format_out = "sf_polygon", limit = 1)$multipolygon# Try this first option and plot to see the city 
-my_area <- st_make_valid(my_area)
-qtm(my_area)
+qtm(study_area)# Plot map
 
-# my_area <- osmdata::getbb(icity, format_out = "sf_polygon", limit = 1) #otherwise, try this one
-# my_area <- st_make_valid(my_area)
-# qtm(my_area)
-
+#Define the road OSM classes. For more details: https://wiki.openstreetmap.org/wiki/Key:highway
 class_roads <- c("motorway","trunk","primary", "secondary", "tertiary") #Define the road classes
 
 iNetRoad <- getOSMfeatures(city = icity, 
@@ -54,22 +76,25 @@ iNetRoad <- getOSMfeatures(city = icity,
                            ishp = FALSE, #If TRUE, all feature shps are salved in the output folder. 
                            iplot = FALSE) #If TRUE, all feature maps are salved in the output folder. 
 st_write(iNetRoad, "shps/iNetroad.shp") 
-#iNetRoad <- st_read("shps/iNetroad.shp")
+iNetRoad <- st_read("shps/iNetroad.shp")
 
+#Aggregate var1 to iNetRoad (or var2, var3...)
 GIS_road <- st_join(iNetRoad, var1, join =st_nearest_feature, left = FALSE) #Join with var1, var2, var3 .....
 #GIS_road <- st_join(GIS_road, var2, st_nearest_feature, st_is_within_distance, dist = 0.1)
 #GIS_road <- st_join(GIS_road, var3, st_nearest_feature, st_is_within_distance, dist = 0.1)
 
-#Raod Categories
-
-road_sampled <- st_join(stations, GIS_road, join = st_is_within_distance, dist = 20, left = FALSE) %>%
+#Road Categories
+road_sampled <- st_join(GIS_road, stations, join = st_is_within_distance, dist = 20, left = FALSE) %>%
   mutate(category = "sampled") %>% st_as_sf() %>% st_transform(crs = 4326)
 road_nonsampled <- GIS_road[!GIS_road$osm_id%in%road_sampled$osm_id,]
 road_nonsampled <- mutate(road_nonsampled, category = "nonsampled")
 
-# Data splitting
+qtm(road_sampled, lines.col = "blue") + qtm(road_nonsampled, lines.col = "orange")
 
-stations_split <- road_sampled %>% distinct(id, .keep_all = TRUE) #create a dataframe with the unique station id
+# Data station splitting
+stations_split <- road_sampled %>% distinct(id, .keep_all = TRUE) %>% #create a dataframe with the unique station id
+  dplyr::select(-id) %>% 
+  st_join(stations, join = st_nearest_feature, left = FALSE)
 stations_split$fclass <- as.factor(stations_split$fclass) #change the factor class to a factor
 
 set.seed(1232)
@@ -78,6 +103,10 @@ Index <- createDataPartition(stations_split$fclass, #create a data partition of 
                              list = FALSE)
 train_stations <- stations_split[ Index, ] #create a train and test dataframe
 test_stations  <- stations_split[-Index, ]
+
+qtm(train_stations, dots.col = "darkblue") + qtm(test_stations, dots.col = "lightblue")
+
+# split traffic data timeseries into training and testing sets
 df_split <- traffic %>% openair::selectByDate(year = 2022, month = 8:9) #Split up traffic timeseries 
 df_split$split <- rep(x = c("training", "test"),
                       times = c(floor(x = 0.8 * nrow(x = df_split)), #80 % for training
@@ -93,14 +122,12 @@ traffic_test$id <- as.character(traffic_test$id)
 train_dataset <- inner_join(traffic_train, train_stations, by ="id") #create a traffic and stations by the "id".
 test_dataset <- inner_join(traffic_test, test_stations, by ="id")
 
-#Feature engeenring ans selection
-
-
+#Feature selection
 features_train <- train_dataset %>% #create a new dataframe with the train dataset
   group_by(date, osm_id) %>% #group by date and osm_id
   summarise(mean_cars = round(mean(icars),digits = 0), #calculate the mean of the cars  and mean speed as depend variables
             mean_speed = round(mean(ispeed), digits = 0), .groups = "drop") %>% 
-  filter(mean_cars>10, mean_speed > 10) %>% #filter the dataframe by the mean of cars and speed
+  filter(mean_cars>10, mean_speed> 10) %>% #filter the dataframe by the mean of cars and speed
   inner_join(road_sampled, by= "osm_id") %>% #join the road sampled dataframe
   inner_join(weather, by= "date") %>% #join the weather dataframe
   as_tibble() %>% dplyr::select(-Latitude, -Longitude, -id, -name, -osm_id,-category, -geometry) %>% #Drop the unsual features
@@ -110,7 +137,7 @@ features_test <- test_dataset %>% #create a new dataframe with the test dataset
   group_by(date, osm_id) %>% #group by date and osm_id
   summarise(mean_cars = round(mean(icars),digits = 0), #calculate the mean of the cars and round to 0 digits
             mean_speed = round(mean(ispeed), digits = 0), .groups = "drop") %>% #calculate the mean of the speed and round to 0 digits
-  filter(mean_cars>10, mean_speed > 10) %>% #filter the dataframe by the mean of cars and speed
+  filter(mean_cars>10, mean_speed> 10) %>% #filter the dataframe by the mean of cars and speed
   inner_join(road_sampled, by= "osm_id") %>% #join the road sampled dataframe
   inner_join(weather, by= "date") %>% #join the weather dataframe
   as_tibble() %>% dplyr::select(-Latitude, -Longitude, -id, -name, -osm_id, -category, -geometry) %>% #select the features
@@ -134,8 +161,6 @@ test_recipe <- receipe_steps %>% # create a recipe for the test data
   bake(features_test)
 
 #Selection and training of ML 
-
-
 train_processed <- train_recipe %>% #Training the RF for traffic flow predictions
   dplyr::select(-mean_speed) #Delete mean_speed for training and test sets as RF runs the traffic flow
 test_processed <- test_recipe %>%

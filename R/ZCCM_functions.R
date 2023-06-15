@@ -343,7 +343,8 @@ getOSMfeatures <- function(city = NULL, road_class = NULL, city_area = NULL, ish
 
   leisure <- getbb(city) %>% opq()%>% add_osm_feature(key = "leisure") %>% osmdata_sf()
   leisure_osm  <- leisure$osm_polygons %>% dplyr::select(leisure, geometry) %>%
-    sf::st_intersection(city_area)
+    sf::st_intersection(city_area) %>%
+    st_collection_extract("POLYGON")
   rm(leisure)
 
   if(ishp == TRUE) {
@@ -401,7 +402,8 @@ getOSMfeatures <- function(city = NULL, road_class = NULL, city_area = NULL, ish
   amenity <- getbb(city)  %>% opq() %>% add_osm_feature(key = "amenity") %>% osmdata_sf()
   amenity_osm  <- amenity$osm_polygons %>% dplyr::select(amenity, geometry) %>%
     st_as_sf() %>% st_transform(crs = 4326) %>%
-    sf::st_intersection(city_area)
+    sf::st_intersection(city_area) %>%
+    st_collection_extract("POLYGON")
   rm(amenity)
 
 
@@ -431,7 +433,8 @@ getOSMfeatures <- function(city = NULL, road_class = NULL, city_area = NULL, ish
   building <- getbb(city) %>% opq() %>% add_osm_feature(key = "building") %>% osmdata_sf()
   building_osm  <- building$osm_polygons %>% dplyr::select(building, geometry) %>%
     st_as_sf() %>% st_transform(crs = 4326) %>%
-    sf::st_intersection(city_area)
+    sf::st_intersection(city_area) %>%
+    st_collection_extract("POLYGON")
   rm(building)
 
   if(ishp == TRUE) {
@@ -459,7 +462,8 @@ getOSMfeatures <- function(city = NULL, road_class = NULL, city_area = NULL, ish
   place <- getbb(city)  %>% opq() %>% add_osm_feature(key = "place") %>% osmdata_sf()
   place_osm  <- place$osm_polygons %>% dplyr::select(place, geometry) %>%
     st_as_sf() %>% st_transform(crs = 4326) %>%
-    sf::st_intersection(city_area)
+    sf::st_intersection(city_area) %>%
+    st_collection_extract("POLYGON")
   rm(place)
 
   if(ishp == TRUE) {
@@ -487,7 +491,8 @@ getOSMfeatures <- function(city = NULL, road_class = NULL, city_area = NULL, ish
   shop <- getbb(city) %>% opq() %>% add_osm_feature(key = "shop") %>% osmdata_sf()
   shop_osm  <- shop$osm_polygons %>% dplyr::select(shop, geometry) %>%
     st_as_sf() %>% st_transform(crs = 4326) %>%
-    sf::st_intersection(city_area)
+    sf::st_intersection(city_area) %>%
+    st_collection_extract("POLYGON")
   rm(shop)
 
   if(ishp == TRUE) {
@@ -515,7 +520,8 @@ getOSMfeatures <- function(city = NULL, road_class = NULL, city_area = NULL, ish
   natural <- getbb(city) %>% opq() %>% add_osm_feature(key = "natural") %>% osmdata_sf()
   natural_osm  <- natural$osm_polygons %>% dplyr::select(natural, geometry) %>%
     st_as_sf() %>% st_transform(crs = 4326) %>%
-    sf::st_intersection(city_area)
+    sf::st_intersection(city_area) %>%
+    st_collection_extract("POLYGON")
   rm(natural)
 
   if(ishp == TRUE) {
