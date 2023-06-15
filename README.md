@@ -65,7 +65,7 @@ source("myFolder/ZCCM_functions.R") #runs the ZCCM_functions file, which contain
 
 ## Learn ML model
 
-In this code, we create a ML model to estimate the hourly traffic flow and average speed at street level in Berlin, Germany. The data we are using includes:
+In this code, we create a ML model to estimate the hourly traffic flow and average speed at street level in Berlin, Germany. We are using the following data:
 
 -   Hourly volume of vehicles and average speed for different types of vehicles from the lane-specific detectors at 583 counting stations from August to September 2022. These data are sourced from the Digital Platform City Traffic Berlin / Traffic Detection Berlin and are named *traffic_berlin_2022_08_09.csv* and *counting_stations_berlin.csv.*
 
