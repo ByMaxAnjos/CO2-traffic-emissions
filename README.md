@@ -105,14 +105,7 @@ var1 <- sf::read_sf("shps/var1_berlin_landuse.shp")
 qtm(var1, fill="lndsAtl")#Plot map
 
 ```
-
-<img src="images/Screenshot 2023-06-15 at 14.03.10.png" width="356"/>
-
-<img src="images/Screenshot 2023-06-15 at 14.07.36.png" width="311"/>
-
-<img src="images/Screenshot 2023-06-15 at 14.09.44.png" width="336"/>
-
-<img src="images/Screenshot 2023-06-15 at 14.14.50.png" width="234"/>
+<img width="1202" alt="Screenshot 2023-06-15 at 17 56 42" src="https://github.com/ByMaxAnjos/CO2-traffic-emissions/assets/94705218/322bbb92-203f-40a3-89d7-cdcc9caf7228">
 
 ### Get GIS features
 
@@ -154,8 +147,7 @@ GIS_road <- st_join(iNetRoad, var1, join =st_nearest_feature, left = FALSE) #Joi
 #GIS_road <- st_join(GIS_road, var3, st_nearest_feature, st_is_within_distance, dist = 0.1)
 
 ```
-
-![](images/Screenshot%202023-06-15%20at%2014.20.35.png)
+![image](https://github.com/ByMaxAnjos/CO2-traffic-emissions/assets/94705218/45ad8bf5-5273-4354-938d-10d6e9032dea)
 
 ### Roads categories
 
@@ -171,8 +163,7 @@ road_nonsampled <- mutate(road_nonsampled, category = "nonsampled")
 qtm(road_sampled, lines.col = "blue") + qtm(road_nonsampled, lines.col = "orange") #Plot mapa
 
 ```
-
-![](images/Screenshot%202023-06-15%20at%2015.13.03-01.png)
+![image](https://github.com/ByMaxAnjos/CO2-traffic-emissions/assets/94705218/173ac24f-d018-4b9e-91e4-99430741efbc)
 
 ### Data splitting
 
@@ -212,7 +203,7 @@ test_dataset <- inner_join(traffic_test, test_stations, by ="id")
 
 ```
 
-![](images/Screenshot%202023-06-15%20at%2016.15.02.png)
+![image](https://github.com/ByMaxAnjos/CO2-traffic-emissions/assets/94705218/b5fb3662-5be2-4b3e-a0b7-5ee5515a54ec)
 
 ### Feature engineering and selection
 
