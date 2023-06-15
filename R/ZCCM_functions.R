@@ -549,7 +549,7 @@ getOSMfeatures <- function(city = NULL, road_class = NULL, city_area = NULL, ish
 
   # Join OSM features based on raod_osm at first.
   join_features <- st_join(road_osm, amenity_osm, st_nearest_feature, st_is_within_distance, dist = 0.1) #Start with road_osm
-  #join_features <- st_join(join_features, building_osm, st_nearest_feature, st_is_within_distance, dist = 0.1)
+  join_features <- st_join(join_features, building_osm, st_nearest_feature, st_is_within_distance, dist = 0.1)
   join_features <- st_join(join_features, leisure_osm, st_nearest_feature, st_is_within_distance, dist = 0.1)
   join_features <- st_join(join_features, landuse_osm, st_nearest_feature, st_is_within_distance, dist = 0.1)
   join_features <- st_join(join_features, place_osm, st_nearest_feature, st_is_within_distance, dist = 0.1)
@@ -558,8 +558,8 @@ getOSMfeatures <- function(city = NULL, road_class = NULL, city_area = NULL, ish
   
   road_feat_OSM <- join_features %>%
     mutate(length = round(as.numeric(st_length(geometry)), digits = 0)) %>%
-    dplyr::select(osm_id, name, fclass, lanes, maxspeed, amenity, leisure, landuse, place, natural, shop, length,geometry) %>% #Whithout building feature
-    #dplyr::select(osm_id, name, fclass, lanes, maxspeed, amenity, leisure, landuse, building, place, natural, shop, length, geometry)
+    #dplyr::select(osm_id, name, fclass, lanes, maxspeed, amenity, leisure, landuse, place, natural, shop, length,geometry) %>% #Whithout building feature
+    dplyr::select(osm_id, name, fclass, lanes, maxspeed, amenity, leisure, landuse, building, place, natural, shop, length, geometry) %>% 
     mutate_if(is.integer, as.factor) %>% st_as_sf() %>% st_transform(crs = 4326)
 
   if(ishp == TRUE) {

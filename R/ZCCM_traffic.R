@@ -106,8 +106,9 @@ test_stations  <- stations_split[-Index, ]
 
 qtm(train_stations, dots.col = "darkblue") + qtm(test_stations, dots.col = "lightblue")
 
-# split traffic data timeseries into training and testing sets
+# split traffic data timeseries in training and testing sets
 df_split <- traffic %>% openair::selectByDate(year = 2022, month = 8:9) #Split up traffic timeseries 
+
 df_split$split <- rep(x = c("training", "test"),
                       times = c(floor(x = 0.8 * nrow(x = df_split)), #80 % for training
                                 ceiling(x = 0.2 * nrow(x = df_split)))) # 20 % for test
