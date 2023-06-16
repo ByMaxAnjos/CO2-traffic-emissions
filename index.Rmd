@@ -28,24 +28,23 @@ library(plotly)
 library(crosstalk)
 library(DT)
 
-
 #Load files in dashboard folder 
-imap <- st_read("dashboard/imap.shp")
-trend <- fread("dashboard/trend.csv")
-mapCount <- fread("dashboard/mapCount.csv")
-amenity <- fread("dashboard/amenity.csv")
-natural <- fread("dashboard/natural.csv")
-leisure <- fread("dashboard/leisure.csv")
-shop <- fread("dashboard/shop.csv")
-place <- fread("dashboard/place.csv")
-OSM_road <- fread("dashboard/OSM_raod.csv")
-landuse <- fread("dashboard/landuse.csv")
-street <- fread("dashboard/street.csv")
-hour <- fread("dashboard/hour.csv")
-find_street <- fread("dashboard/find_street.csv")
-week <- fread("dashboard/week.csv")
-iDistrict_map <- st_read("dashboard/iDistrict.shp")
-iDistrict_tibble <- fread("dashboard/iDistrict_table.csv") %>% 
+imap <- st_read("dashboard/data/imap.shp")
+trend <- fread("dashboard/data/trend.csv")
+mapCount <- fread("dashboard/data/mapCount.csv")
+amenity <- fread("dashboard/data/amenity.csv")
+natural <- fread("dashboard/data/natural.csv")
+leisure <- fread("dashboard/data/leisure.csv")
+shop <- fread("dashboard/data/shop.csv")
+place <- fread("dashboard/data/place.csv")
+OSM_road <- fread("dashboard/data/OSM_raod.csv")
+landuse <- fread("dashboard/data/landuse.csv")
+street <- fread("dashboard/data/street.csv")
+hour <- fread("dashboard/data/hour.csv")
+find_street <- fread("dashboard/data/find_street.csv")
+week <- fread("dashboard/data/week.csv")
+iDistrict_map <- st_read("dashboard/data/iDistrict.shp")
+iDistrict_tibble <- fread("dashboard/data/iDistrict_table.csv") %>% 
   dplyr::select(-osm_id)
 
 ```
@@ -131,6 +130,128 @@ highchart() %>%
     hc_credits(enabled = TRUE, text = '@ZoonCityCarbonModel')%>% 
     hc_add_theme(hc_theme_google()) %>% 
   hc_exporting(enabled = TRUE)
+
+```
+# iDistrict {data-icon="fa-search"}
+
+## Column {data-width="400"}
+
+### Find your disctrict
+
+**Get here:**
+
+```{r}
+
+# Create shared data that will be used to link filters, data table, and line plot. 
+  iDistrict_tibble$day <- as.numeric(iDistrict_tibble$day)
+  shared_data <- SharedData$new(iDistrict_tibble, group = 'hello')
+  
+  # Create filter for year and district These filters will adjust the DT datatable and PLOTLY plot. 
+  filter_slider("day", "Day", shared_data, ~day, step = 1)
+  filter_select("district", "District", shared_data, ~district, allLevels = TRUE, multiple = TRUE)
+  filter_checkbox(id = "district", label = "Select district", sharedData = shared_data, group = ~district,
+                  columns=2)
+  
+
+# # Create datatable. 
+# datatable(shared_data,
+#           rownames = FALSE,
+#           colnames = c('tCO2', 'Day', 'District'),
+#           class = 'cell-border stripe',
+#           width = '100%',
+#           extensions = "Scroller",
+#           options=list(deferRender = FALSE, 
+#                        scrollY = 280, 
+#                        scrollCollapse = TRUE,
+#                        scroller = TRUE,
+#                        dom = 't'))
+
+# # iDistrict
+# df_sum <- iDistrict_map %>%
+#   group_by(district) %>%
+#   summarize(ktCO2 = round(sum(tCO2)/1000, digits = 2)) %>% 
+#   na.omit()
+# 
+# highchart() %>%
+#   hc_chart(polar = TRUE, type = "column") %>%
+#   hc_title(text = "Traffic emissions by district in ktCO2", 
+#            style = list(fontSize = '25px', fontWeight = 'bold')) %>%
+#   hc_xAxis(categories = df_sum$district, tickmarkPlacement = "on", lineWidth = 0) %>%
+#   hc_yAxis(gridLineInterpolation = "polygon", lineWidth = 0, min = 0,  title = list(text = "")) %>%
+#   hc_add_series(data = df_sum$ktCO2, name = "ktCO2/month") %>% 
+#   hc_credits(enabled = TRUE, text = '@ZoomCityCarbonModel') %>% 
+#     hc_add_theme(hc_theme_ffx())%>% 
+#   hc_exporting(enabled = TRUE)
+
+```
+
+### 
+
+```{r}
+
+# Set a random seed. We will do this so that we can reproduce the random sample of colors we will use for our next graph. 
+set.seed(80085)
+
+# Create line graph. 
+plot_ly(shared_data, x = ~day, y = ~tCO2, 
+       color = ~district, colors = sample(colours(), 120),
+       type = 'scatter', mode = 'lines',
+       hoverinfo = 'text', text = ~paste("District: ", 
+                                         district, '<br>Day: ', day, "<br>tCO2: ", tCO2)) %>%
+       layout(showlegend = FALSE,
+              title = "trafiic emissions by Disrrict",
+              xaxis = list(title = "Day"),
+              yaxis = list(title = " tCO2")) %>%
+       layout(plot_bgcolor = 'transparent') %>% 
+       layout(paper_bgcolor = 'transparent') %>% 
+       add_markers() %>% 
+       highlight("plotly_click")
+  
+```
+
+## Column {data-width="600"}
+
+### Interactive map
+
+```{r map}
+
+pal_line <- colorFactor(palette = "viridis", domain = NULL, reverse = TRUE)
+iDistrict_map$labels <- paste0(
+  "<strong> district: </strong> ",
+  iDistrict_map$district, "<br/> ",
+  "<strong> tCO2: </strong> ",
+  iDistrict_map$tCO2, "<br/> "
+) %>%
+  lapply(htmltools::HTML)
+
+leaflet(iDistrict_map) %>%
+  addTiles(group = "OpenStreeMap.Default") %>% 
+  addProviderTiles("Esri.WorldImagery", group = "Esri.WorldImagery") %>%
+  addProviderTiles("CartoDB.DarkMatter", group = "CartoDB.DarkMatter") %>%
+  addPolygons(weight = 1, smoothFactor = 0.5,
+    #fillColor = "tCO2",
+    color = ~ pal_line(tCO2),
+    opacity = 1.0, fillOpacity = 0.5,
+    label = ~labels,
+    highlight =  highlightOptions(color = "white", weight = 2,
+      bringToFront = TRUE)
+  ) %>%
+  leaflet::addLegend(pal = pal_line, values = "",title = "Traffic tCO2 emissions", group = "Total of tCO2") %>% 
+  # layers control
+  addLayersControl(
+    baseGroups = c("OpenStreeMap.Default", "CartoDB.DarkMatter", "Esri.WorldImagery"),
+    position = "topleft",
+    options = layersControlOptions(collapsed = TRUE)
+  )
+
+```
+
+### 
+
+```{r}
+set.seed(80085)
+plot_ly(shared_data, y = ~tCO2, x = ~district, type = 'bar', color = ~district, colors = sample(colours(), 120)) %>%
+       layout(yaxis = list(categoryorder = "trace"))
 
 ```
 
@@ -408,129 +529,6 @@ week %>%
               style = list(fontSize = '16px')) %>% 
   hc_credits(enabled = TRUE, text = '@ZoomCityCarbonModel') %>% 
   hc_exporting(enabled = TRUE)
-
-```
-
-# iDistrict {data-icon="fa-search"}
-
-## Column {data-width="400"}
-
-### Find your disctrict
-
-**Get here:**
-
-```{r}
-
-# Create shared data that will be used to link filters, data table, and line plot. 
-  iDistrict_tibble$day <- as.numeric(iDistrict_tibble$day)
-  shared_data <- SharedData$new(iDistrict_tibble, group = 'hello')
-  
-  # Create filter for year and district These filters will adjust the DT datatable and PLOTLY plot. 
-  filter_slider("day", "Day", shared_data, ~day, step = 1)
-  filter_select("district", "District", shared_data, ~district, allLevels = TRUE, multiple = TRUE)
-  filter_checkbox(id = "district", label = "Select district", sharedData = shared_data, group = ~district,
-                  columns=2)
-  
-
-# # Create datatable. 
-# datatable(shared_data,
-#           rownames = FALSE,
-#           colnames = c('tCO2', 'Day', 'District'),
-#           class = 'cell-border stripe',
-#           width = '100%',
-#           extensions = "Scroller",
-#           options=list(deferRender = FALSE, 
-#                        scrollY = 280, 
-#                        scrollCollapse = TRUE,
-#                        scroller = TRUE,
-#                        dom = 't'))
-
-# # iDistrict
-# df_sum <- iDistrict_map %>%
-#   group_by(district) %>%
-#   summarize(ktCO2 = round(sum(tCO2)/1000, digits = 2)) %>% 
-#   na.omit()
-# 
-# highchart() %>%
-#   hc_chart(polar = TRUE, type = "column") %>%
-#   hc_title(text = "Traffic emissions by district in ktCO2", 
-#            style = list(fontSize = '25px', fontWeight = 'bold')) %>%
-#   hc_xAxis(categories = df_sum$district, tickmarkPlacement = "on", lineWidth = 0) %>%
-#   hc_yAxis(gridLineInterpolation = "polygon", lineWidth = 0, min = 0,  title = list(text = "")) %>%
-#   hc_add_series(data = df_sum$ktCO2, name = "ktCO2/month") %>% 
-#   hc_credits(enabled = TRUE, text = '@ZoomCityCarbonModel') %>% 
-#     hc_add_theme(hc_theme_ffx())%>% 
-#   hc_exporting(enabled = TRUE)
-
-```
-
-### 
-
-```{r}
-
-# Set a random seed. We will do this so that we can reproduce the random sample of colors we will use for our next graph. 
-set.seed(80085)
-
-# Create line graph. 
-plot_ly(shared_data, x = ~day, y = ~tCO2, 
-       color = ~district, colors = sample(colours(), 120),
-       type = 'scatter', mode = 'lines',
-       hoverinfo = 'text', text = ~paste("District: ", 
-                                         district, '<br>Day: ', day, "<br>tCO2: ", tCO2)) %>%
-       layout(showlegend = FALSE,
-              title = "trafiic emissions by Disrrict",
-              xaxis = list(title = "Day"),
-              yaxis = list(title = " tCO2")) %>%
-       layout(plot_bgcolor = 'transparent') %>% 
-       layout(paper_bgcolor = 'transparent') %>% 
-       add_markers() %>% 
-       highlight("plotly_click")
-  
-```
-
-## Column {data-width="600"}
-
-### Interactive map
-
-```{r map}
-
-pal_line <- colorFactor(palette = "viridis", domain = NULL, reverse = TRUE)
-iDistrict_map$labels <- paste0(
-  "<strong> district: </strong> ",
-  iDistrict_map$district, "<br/> ",
-  "<strong> tCO2: </strong> ",
-  iDistrict_map$tCO2, "<br/> "
-) %>%
-  lapply(htmltools::HTML)
-
-leaflet(iDistrict_map) %>%
-  addTiles(group = "OpenStreeMap.Default") %>% 
-  addProviderTiles("Esri.WorldImagery", group = "Esri.WorldImagery") %>%
-  addProviderTiles("CartoDB.DarkMatter", group = "CartoDB.DarkMatter") %>%
-  addPolygons(weight = 1, smoothFactor = 0.5,
-    #fillColor = "tCO2",
-    color = ~ pal_line(tCO2),
-    opacity = 1.0, fillOpacity = 0.5,
-    label = ~labels,
-    highlight =  highlightOptions(color = "white", weight = 2,
-      bringToFront = TRUE)
-  ) %>%
-  leaflet::addLegend(pal = pal_line, values = "",title = "Traffic tCO2 emissions", group = "Total of tCO2") %>% 
-  # layers control
-  addLayersControl(
-    baseGroups = c("OpenStreeMap.Default", "CartoDB.DarkMatter", "Esri.WorldImagery"),
-    position = "topleft",
-    options = layersControlOptions(collapsed = TRUE)
-  )
-
-```
-
-### 
-
-```{r}
-set.seed(80085)
-plot_ly(shared_data, y = ~tCO2, x = ~district, type = 'bar', color = ~district, colors = sample(colours(), 120)) %>%
-       layout(yaxis = list(categoryorder = "trace"))
 
 ```
 

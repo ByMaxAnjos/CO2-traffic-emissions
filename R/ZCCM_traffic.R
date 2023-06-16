@@ -1,3 +1,14 @@
+#=======================================================================================
+#
+# Title:       High Spatio-temporal Resolution of traffic CO2 emissions
+# Author:      Dr. Max Anjos (maxanjos@campus.ul.pt)
+# Description: Interpolation of air temperarure. More details on the approach are available at:
+#             https://github.com/ByMaxAnjos/CO2-traffic-emissions
+
+# Data: 16.06.2023
+
+#=======================================================================================
+
 
 if (!require("pacman")) install.packages("pacman") # if the pacman package is not installed, install it
 pacman::p_load(lubridate, tidyverse, httr, data.table, sf, openair, osmdata, tmap, recipes, timetk, caret, ranger, rmarkdown) # use pacman to load the following packages
@@ -51,6 +62,7 @@ qtm(var1, fill="lndsAtl")#Plot map
 
 # Get study area polygon from OpenStreetMap data
 icity <- "Berlin"
+
 shp_verify <- osmdata::getbb(city, format_out = "sf_polygon", limit = 1, featuretype = "city")
 # Check if polygon was obtained successfully
 if(!is.null(shp_verify$geometry) & !inherits(shp_verify, "list")) {
@@ -106,7 +118,7 @@ test_stations  <- stations_split[-Index, ]
 
 qtm(train_stations, dots.col = "darkblue") + qtm(test_stations, dots.col = "lightblue")
 
-# split traffic data timeseries in training and testing sets
+# split traffic data timeseries:training and testing sets
 df_split <- traffic %>% openair::selectByDate(year = 2022, month = 8:9) #Split up traffic timeseries 
 
 df_split$split <- rep(x = c("training", "test"),
@@ -131,7 +143,7 @@ features_train <- train_dataset %>% #create a new dataframe with the train datas
   filter(mean_cars>10, mean_speed> 10) %>% #filter the dataframe by the mean of cars and speed
   inner_join(road_sampled, by= "osm_id") %>% #join the road sampled dataframe
   inner_join(weather, by= "date") %>% #join the weather dataframe
-  as_tibble() %>% dplyr::select(-Latitude, -Longitude, -id, -name, -osm_id,-category, -geometry) %>% #Drop the unsual features
+  as_tibble() %>% dplyr::select(-id, -name, -osm_id,-category, -geometry) %>% #Drop the unsual features
   mutate_if(is.character, as.factor) #mutate the character variables to factor
 
 features_test <- test_dataset %>% #create a new dataframe with the test dataset
@@ -141,7 +153,7 @@ features_test <- test_dataset %>% #create a new dataframe with the test dataset
   filter(mean_cars>10, mean_speed> 10) %>% #filter the dataframe by the mean of cars and speed
   inner_join(road_sampled, by= "osm_id") %>% #join the road sampled dataframe
   inner_join(weather, by= "date") %>% #join the weather dataframe
-  as_tibble() %>% dplyr::select(-Latitude, -Longitude, -id, -name, -osm_id, -category, -geometry) %>% #select the features
+  as_tibble() %>% dplyr::select(-id, -name, -osm_id, -category, -geometry) %>% #select the features
   mutate_if(is.character, as.factor) #mutate the character variables to factor
 
 receipe_steps <-
@@ -161,6 +173,7 @@ test_recipe <- receipe_steps %>% # create a recipe for the test data
   prep(features_test) %>%
   bake(features_test)
 
+str(test_recipe)
 #Selection and training of ML 
 train_processed <- train_recipe %>% #Training the RF for traffic flow predictions
   dplyr::select(-mean_speed) #Delete mean_speed for training and test sets as RF runs the traffic flow
@@ -181,6 +194,7 @@ rfModel_df_cars <- rfModel_pred_cars$predictions %>% #Create the new dataframe w
   rename(predcars = ...1)
 write_csv(rfModel_df_cars, "rfModel_df_cars.csv")
 
+str(rfModel_df_cars)
 train_processed <- train_recipe %>% #Training the RF for average speed predictions
   dplyr::select(-mean_cars) #Delete mean_cars for training and test sets as RF runs the average speed 
 test_processed <- test_recipe %>%
@@ -202,8 +216,6 @@ write_csv(rfModel_df_speed, "rfModel_df_speed.csv")
 
 
 #Model evaluation
-
-
 rfModel_df_cars %>% #Plot timeseries for observed and modelled values
   openair::timePlot(pollutant = c("mean_cars", "predcars"), group = TRUE,
                     avg.time = "hour",  name.pol = c("Observed", "ML-model"),

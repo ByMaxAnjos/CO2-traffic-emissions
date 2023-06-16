@@ -902,21 +902,25 @@ PrepDash <- function(city = "Berlin", ipath = "output_citystreet/", road = iNetR
     setkey(date)
   
   # Create a folder name using paste0
-  folder <- paste0("dashboard/")
+  folder <- paste0("dashboard/data/")
   
   # Check if the folder exists
   if (!dir.exists(folder)) {
     # Create the folder if it does not exist
     dir.create(folder)
   }
-  #get shp RIO
-  shp_verify=osmdata::getbb(city, format_out = "sf_polygon", limit = 1)$polygon
-  if(is.null(shp_verify)) {
-    my_area <- osmdata::getbb(city, format_out = "sf_polygon", limit = 1)$multipolygon# Try this first option and plot to see the city 
-    my_area <- st_make_valid(my_area)
+  
+  # Get study area polygon from OpenStreetMap data
+  shp_verify <- osmdata::getbb(city, format_out = "sf_polygon", limit = 1, featuretype = "city")
+  # Check if polygon was obtained successfully
+  if(!is.null(shp_verify$geometry) & !inherits(shp_verify, "list")) {
+    study_area <- shp_verify$geometry
+    study_area <- st_make_valid(study_area) %>%
+      st_as_sf()
   } else {
-    my_area <- osmdata::getbb(city, format_out = "sf_polygon", limit = 1)$polygon# Try this first option and plot to see the city 
-    my_area <- st_make_valid(my_area)
+    study_area <- shp_verify$multipolygon
+    study_area <- st_make_valid(study_area) %>%
+      st_as_sf() 
   }
 
   # iMap
@@ -1100,11 +1104,8 @@ PrepDash <- function(city = "Berlin", ipath = "output_citystreet/", road = iNetR
     dplyr::select(-osm_id)
   file <- paste0(folder,"iDistrict_table.csv")
   write_csv(iDistrict_tibble, file)
-  
-  
   return()
 }
-
 
 #Interpolate Air temperature
 

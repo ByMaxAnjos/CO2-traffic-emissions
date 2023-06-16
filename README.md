@@ -105,7 +105,8 @@ var1 <- sf::read_sf("shps/var1_berlin_landuse.shp")
 qtm(var1, fill="lndsAtl")#Plot map
 
 ```
-<img width="1202" alt="Screenshot 2023-06-15 at 17 56 42" src="https://github.com/ByMaxAnjos/CO2-traffic-emissions/assets/94705218/322bbb92-203f-40a3-89d7-cdcc9caf7228">
+
+<img src="https://github.com/ByMaxAnjos/CO2-traffic-emissions/assets/94705218/322bbb92-203f-40a3-89d7-cdcc9caf7228" alt="Screenshot 2023-06-15 at 17 56 42" width="1202"/>
 
 ### Get GIS features
 
@@ -147,6 +148,7 @@ GIS_road <- st_join(iNetRoad, var1, join =st_nearest_feature, left = FALSE) #Joi
 #GIS_road <- st_join(GIS_road, var3, st_nearest_feature, st_is_within_distance, dist = 0.1)
 
 ```
+
 ![image](https://github.com/ByMaxAnjos/CO2-traffic-emissions/assets/94705218/45ad8bf5-5273-4354-938d-10d6e9032dea)
 
 ### Roads categories
@@ -163,6 +165,7 @@ road_nonsampled <- mutate(road_nonsampled, category = "nonsampled")
 qtm(road_sampled, lines.col = "blue") + qtm(road_nonsampled, lines.col = "orange") #Plot mapa
 
 ```
+
 ![image](https://github.com/ByMaxAnjos/CO2-traffic-emissions/assets/94705218/173ac24f-d018-4b9e-91e4-99430741efbc)
 
 ### Data splitting
@@ -250,8 +253,7 @@ test_recipe <- receipe_steps %>% # create a recipe for the test data
 
 ```
 
-<img width="927" alt="Screenshot 2023-06-16 at 10 11 08" src="https://github.com/ByMaxAnjos/CO2-traffic-emissions/assets/94705218/32cd4759-60ac-49b5-97dd-6906a2a5a22e">
-
+<img src="https://github.com/ByMaxAnjos/CO2-traffic-emissions/assets/94705218/32cd4759-60ac-49b5-97dd-6906a2a5a22e" alt="Screenshot 2023-06-16 at 10 11 08" width="927"/>
 
 ### Selection and training of ML algorithm
 
@@ -298,8 +300,8 @@ rfModel_df_speed <- rfModel_pred_speed$predictions %>%
 write_csv(rfModel_df_speed, "rfModel_df_speed.csv")
 
 ```
-<img width="936" alt="Screenshot 2023-06-16 at 10 21 35" src="https://github.com/ByMaxAnjos/CO2-traffic-emissions/assets/94705218/0e86fc2e-2c8d-4717-bb27-35786fee7732">
 
+<img src="https://github.com/ByMaxAnjos/CO2-traffic-emissions/assets/94705218/0e86fc2e-2c8d-4717-bb27-35786fee7732" alt="Screenshot 2023-06-16 at 10 21 35" width="936"/>
 
 ### Model Evaluation and interpretabilty
 
@@ -354,9 +356,9 @@ variables_cars %>%
 
 ```
 
-<img width="1394" alt="Screenshot 2023-06-16 at 10 24 53" src="https://github.com/ByMaxAnjos/CO2-traffic-emissions/assets/94705218/1ee7df5f-cb48-4065-980f-5052729e8b68">
+<img src="https://github.com/ByMaxAnjos/CO2-traffic-emissions/assets/94705218/1ee7df5f-cb48-4065-980f-5052729e8b68" alt="Screenshot 2023-06-16 at 10 24 53" width="1394"/>
 
-<img width="1440" alt="Screenshot 2023-06-16 at 10 26 58" src="https://github.com/ByMaxAnjos/CO2-traffic-emissions/assets/94705218/3aa65df3-a589-4635-858f-6573f52e557a">
+<img src="https://github.com/ByMaxAnjos/CO2-traffic-emissions/assets/94705218/3aa65df3-a589-4635-858f-6573f52e557a" alt="Screenshot 2023-06-16 at 10 26 58" width="1440"/>
 
 #### ML model for average speed predictions
 
