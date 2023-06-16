@@ -1,0 +1,577 @@
+---
+title: "Zoom City Carbon Model"
+author : "Berlin"
+output: 
+  flexdashboard::flex_dashboard:
+    source_code: "https://github.com/ByMaxAnjos"
+    vertical_layout: scroll
+    social: menu
+    theme: yeti
+---
+
+```{r setup, include=FALSE}
+# Importing libraries
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(flexdashboard, shiny, tidyverse, data.table, highcharter, gt, htmltools,leaflet, sf, plotly, crosstalk, viridis, DT)
+
+library(flexdashboard)
+library(shiny)
+library(tidyverse)
+library(data.table)
+library(highcharter)
+library(sf)
+library(gt)
+library(htmltools)
+library(viridis)
+library(leaflet)
+library(plotly)
+library(crosstalk)
+library(DT)
+
+
+
+#Load files in dashboard folder 
+imap <- st_read("dashboard/data/imap.shp")
+trend <- fread("dashboard/data/trend.csv")
+mapCount <- fread("dashboard/data/mapCount.csv")
+amenity <- fread("dashboard/data/amenity.csv")
+natural <- fread("dashboard/data/natural.csv")
+leisure <- fread("dashboard/data/leisure.csv")
+shop <- fread("dashboard/data/shop.csv")
+place <- fread("dashboard/data/place.csv")
+OSM_road <- fread("dashboard/data/OSM_raod.csv")
+landuse <- fread("dashboard/data/landuse.csv")
+street <- fread("dashboard/data/street.csv")
+hour <- fread("dashboard/data/hour.csv")
+find_street <- fread("dashboard/data/find_street.csv")
+week <- fread("dashboard/data/week.csv")
+iDistrict_map <- st_read("dashboard/data/iDistrict.shp")
+iDistrict_tibble <- fread("dashboard/data/iDistrict_table.csv") %>% 
+  dplyr::select(-osm_id)
+
+```
+
+# Sidebar {.sidebar}
+
+The **Zoom City Carbon Model - ZCCM** is a multi-layered, bottom-up approach for mapping and quantifying the total CO2 emissions in a city at high spatial and temporal resolutions, down to 100-meter grids or street level, and sectorial resolution. The model identifies major CO2 emitters and sinks, such as road traffic vehicles, building energy consumption, human respiration, and vegetation/soils, and estimates their emission patterns and changes over time.
+
+This **Emission Geographic Information platform** is designed to communicate the outcomes of the {ZCCM} to users, stakeholders, the research community, and the public in general. It enables the visualization of zoom CO2 maps and summary statistics of emissions in an interactive way.
+
+This **Flexdashboard R** leverages road traffic estimates from the ZCCM::traffic model <https://github.com/ByMaxAnjos/CO2-traffic-emissions> to showcase the spatio-temporal variability of CO2 emissions at the city level. With this tool, users can explore detailed street-level emissions, emissions associated with Open Street Map features, and temporal patterns such as hourly time series, daily cycles, and monthly totals.
+
+**Author: Max Anjos, 2023.** [maxanjos\@campus.ul.pt](mailto:maxanjos@campus.ul.pt){.email}, Institute of Ecology Chair of Climatology, Technical University of Berlin.
+
+# iMap {data-icon="fa-map"}
+
+### Total Emissions {data-height="500"}
+
+```{r fig.height=5}
+
+# Mapping 1
+#imap$col_scale <- log(1 + imap$tCO2)
+pal_line <- colorFactor(palette = "Spectral", reverse = TRUE, domain = NULL)
+#pal_line <- colorNumeric(reverse = TRUE, palette = "Spectral", domain = NULL)
+
+imap$labels <- paste0(
+  "<strong> name: </strong> ",
+  imap$name, "<br/> ",
+  "<strong> tCO2: </strong> ",
+  imap$tCO2, "<br/> "
+) %>%
+  lapply(htmltools::HTML)
+
+leaflet(imap) %>%
+  addTiles(group = "OpenStreeMap.Default") %>% 
+  addProviderTiles("Esri.WorldImagery", group = "Esri.WorldImagery") %>%
+  addProviderTiles("CartoDB.DarkMatter", group = "CartoDB.DarkMatter") %>%
+  addTiles() %>%
+  setView(lng = 13.406318, lat = 52.518582, zoom = 13) %>%
+  addPolylines(
+    #fillColor = "tCO2",
+    color = ~ pal_line(tCO2),
+    #fillOpacity = 0.7,
+    label = ~labels,
+    highlight = highlightOptions(
+      color = "black",
+      bringToFront = TRUE
+    )
+  ) %>%
+  # leaflet::addLegend("bottomright",pal = pal_line, values = ~col_scale, title = "tCO2/month",
+  #                    labFormat = labelFormat(prefix = "  > " , transform =  function(x) exp(x) - 1 , digits = 0)) %>% 
+  leaflet::addLegend("bottomright", pal = pal_line, values = "", title = "tCO2/month") %>%
+  # layers control 
+  addLayersControl(
+    baseGroups = c("OpenStreeMap.Default", "Esri.WorldImagery", "CartoDB.DarkMatter"),
+    position = "topleft",
+    options = layersControlOptions(collapsed = TRUE)
+  )
+```
+
+### Trend Emissions
+
+```{r fig.height=5}
+
+# Create tibble for our line plot.  
+#trend <- fread("trend.csv")
+
+highchart() %>% 
+    hc_add_series(trend, hcaes(x = date_day, y = ktCO2, color = ktCO2), type = "spline") %>%
+    hc_tooltip(crosshairs = TRUE, borderWidth = 1.5, headerFormat = "", pointFormat =
+                 paste("Day: <b>{point.x}</b> <br> ktCO2: <b>{point.y}</b>")) %>%
+    hc_title(text = "") %>% 
+    hc_subtitle(text = "") %>%
+    hc_xAxis(title = list(text = "Day")) %>%
+    hc_yAxis(title = list(text = "Traffic emissions [ktCO2/day]"),
+             allowDecimals = FALSE,
+             plotLines = list(list(
+                    color = "white", width = 1, dashStyle = "Dash", 
+                    value = mean(trend$ktCO2),
+                    label = list(text = "Mean = 10", 
+                                 style = list(color = "white", fontSize = 11))))) %>%
+    hc_legend(enabled = FALSE) %>% 
+    hc_credits(enabled = TRUE, text = '@ZoonCityCarbonModel')%>% 
+    hc_add_theme(hc_theme_google()) %>% 
+  hc_exporting(enabled = TRUE)
+
+```
+
+# Summary Stats {data-orientation="rows" data-icon="fa-bar-chart"}
+
+## Row {data-height="100"}
+
+## Row 1 {data-height="110"}
+
+### Total of traffic emissions [ktCO2/month]
+
+```{r}
+#mapCount <- fread("mapCount.csv")
+
+valueBox(round(sum(mapCount$ktCO2), digits = 2),icon = "fa-users", color = "purple")
+```
+
+### Total of carbon [ktC/month]
+
+```{r}
+
+valueBox(round(sum(mapCount$ktC), digits = 2), icon="fa-users", color = "purple")
+```
+
+## Row 2 {.tabset .tabset-fade}
+
+### Top CO2 Amenity sites
+
+```{r fig.height=5}
+#amenity <- fread("amenity.csv")
+
+# Colors
+custom_colors <- viridis::plasma(n = length(amenity$amenity))
+
+# Amenity Open Street Map feature
+amenity %>% 
+  hchart('bar', hcaes(x = amenity, y = ktCO2, color = custom_colors)) %>% 
+  hc_add_theme(hc_theme_google()) %>% 
+  hc_tooltip(pointFormat = '<b>ktCO2: </b> {point.y} <br>') %>% 
+  hc_title(text = 'Spatial association - Amenity',
+           style = list(fontSize = '25px', fontWeight = 'bold')) %>% 
+  hc_subtitle(text = 'Traffic emissions [ktCO2/month]',
+              style = list(fontSize = '16px')) %>%
+ hc_xAxis(title = "") %>%
+ hc_yAxis(title = "") %>%
+  hc_credits(enabled = TRUE, text = '@ZoomCityCarbonModel')%>% 
+  hc_exporting(enabled = TRUE)
+
+```
+
+### Top CO2 Leisure sites
+
+```{r fig.height=5}
+#leisure <- fread("leisure.csv")
+
+# Colors
+custom_colors <- viridis::turbo(n = length(leisure$leisure))
+
+# Leisure Open Street Map feature
+leisure %>% 
+  hchart('column', hcaes(x = leisure, y = ktCO2, color = custom_colors)) %>% 
+  hc_add_theme(hc_theme_google()) %>% 
+  hc_tooltip(pointFormat = '<b>ktCO2: </b> {point.y} <br>') %>% 
+  hc_title(text = 'Spatial association - Leisure',
+           style = list(fontSize = '25px', fontWeight = 'bold')) %>% 
+  hc_subtitle(text = 'Traffic emissions [ktCO2/month]',
+              style = list(fontSize = '16px')) %>% 
+  hc_xAxis(title = "") %>%
+  hc_yAxis(title = "") %>%
+  hc_credits(enabled = TRUE, text = '@ZoomCityCarbonModel')%>% 
+  hc_exporting(enabled = TRUE)
+
+```
+
+### Top CO2 Natural sites
+
+```{r fig.height=5}
+#natural <- fread("natural.csv")
+
+# Colors
+custom_colors <- viridis::viridis(n = length(natural$natural))
+
+# Natural Open Street Map feature
+natural %>% 
+  hchart('bar', hcaes(x = natural, y = ktCO2, color = custom_colors)) %>% 
+  hc_add_theme(hc_theme_google()) %>% 
+  hc_tooltip(pointFormat = '<b>ktCO2: </b> {point.y} <br>') %>% 
+  hc_title(text = 'Spatial association - Natural',
+           style = list(fontSize = '25px', fontWeight = 'bold')) %>% 
+  hc_subtitle(text = 'Traffic emissions [ktCO2/month]',
+              style = list(fontSize = '16px')) %>% 
+  hc_xAxis(title = "") %>%
+  hc_yAxis(title = "") %>%
+  hc_credits(enabled = TRUE, text = '@ZoomCityCarbonModel')%>% 
+  hc_exporting(enabled = TRUE)
+
+```
+
+### Top CO2 Shop sites
+
+```{r fig.height=5}
+#shop <- fread("shop.csv")
+
+# Colors
+custom_colors <- viridis::inferno(n = length(shop$shop))
+
+# Shop Open Street Map features
+shop  %>% 
+  hchart('column', hcaes(x = shop, y = ktCO2, color = custom_colors),
+         options3d = list(enabled = TRUE, beta = 1, alpha = 1)) %>% 
+         hc_add_theme(hc_theme_google()) %>% 
+  hc_tooltip(pointFormat = '<b>ktCO2: </b> {point.y} <br>') %>% 
+  hc_title(text = 'Spatial association - Shop',
+           style = list(fontSize = '25px', fontWeight = 'bold')) %>% 
+  hc_subtitle(text = 'Traffic emissions [ktCO2/month]',
+              style = list(fontSize = '16px')) %>%
+  hc_xAxis(title = "") %>%
+  hc_yAxis(title = "") %>%
+  hc_credits(enabled = TRUE, text = '@ZooomCityCarbonModel')%>% 
+  hc_exporting(enabled = TRUE)
+
+```
+
+## Row 3 {data-height="300"}
+
+### 
+
+```{r}
+
+# Colors
+custom_colors <- viridis::mako(n = length(OSM_road$fclass))
+
+# Emissions by OSM road class
+OSM_road %>% 
+  hchart('pie', hcaes(x = fclass, y = ktCO2, color = custom_colors)) %>% 
+  hc_add_theme(hc_theme_google()) %>% 
+  hc_tooltip(pointFormat='<b>Proportion: </b> {point.percentage:,.2f}%') %>% 
+  hc_title(text = 'Emissions by OSM road class',
+           style = list(fontSize = '15px', fontWeight = 'bold')) %>% 
+  hc_credits(enabled = TRUE, text = '@ZoomCityCarbonModel')%>% 
+  hc_exporting(enabled = TRUE)
+  
+```
+
+### 
+
+```{r}
+
+# Colors
+custom_colors <- viridis::cividis(n = length(place$place))
+
+# Emissions by FRC road class
+place %>% 
+  hchart('pie', hcaes(x = as.factor(place), y = ktCO2, color = custom_colors)) %>% 
+  hc_add_theme(hc_theme_google()) %>% 
+  hc_tooltip(pointFormat='<b>Proportion: </b> {point.percentage:,.2f}%') %>% 
+  hc_title(text = 'Emissions by OSM place',
+           style = list(fontSize = '15px', fontWeight = 'bold')) %>% 
+  hc_credits(enabled = TRUE, text = '@ZoomCityCarbonModel')%>% 
+  hc_exporting(enabled = TRUE)
+  
+```
+
+### 
+
+```{r}
+
+# Colors
+custom_colors <- viridis::rocket(n = length(landuse$landuse))
+
+# Emissions by landuse
+landuse %>% 
+  hchart('pie', hcaes(x = landuse, y = ktCO2, color = custom_colors)) %>% 
+  hc_add_theme(hc_theme_google()) %>% 
+  hc_tooltip(pointFormat='<b>Proportion: </b> {point.percentage:,.2f}%') %>% 
+  hc_title(text = 'Emissions by OSM landuse',
+           style = list(fontSize = '15px', fontWeight = 'bold')) %>% 
+  hc_credits(enabled = TRUE, text = '@ZoomCityCarbonModel')%>% 
+  hc_exporting(enabled = TRUE)
+```
+
+# iStreets {data-orientation="rows" data-icon="fa-list"}
+
+## Row {data-height="50"}
+
+## Row 1 {data-height="500" data-width="400"}
+
+### Top 20 Emitter Streets in tCO2
+
+```{r fig.height=5}
+#street <- fread("street.csv")
+
+# Colors
+custom_colors <- viridis::mako(n = length(street$name))
+
+# Most emitter streets - treemap 
+street %>% 
+  head(20) %>% 
+  hchart("treemap", hcaes(x = name, value = tCO2, color = tCO2), dataLabels = list(enabled = TRUE)) %>% 
+  #hc_colorAxis(stops = color_stops(colors = viridis::viridis(20))) %>% 
+  hc_credits(enabled = TRUE, text = '@ZoomCityCarbonModel') %>% 
+  hc_exporting(enabled = TRUE) 
+
+```
+
+## Row 2 {data-height="900" data-width="800"}
+
+### Find your street
+
+```{r}
+#find_street <- fread("find_street.csv")
+find_street %>% 
+  datatable(
+caption="Top 20 emitter streets",
+rownames=T,
+filter="top",
+options = list(pageLength = 20
+))
+
+```
+
+# Temporal Behaviour {data-orientation="rows" data-icon="fa-bar-chart"}
+
+## Row {data-height="50"}
+
+## Row {data-height="400"}
+
+### 
+
+```{r}
+#hour <- fread("hour.csv")
+
+# Create tibble for our line plot.  
+
+custom_colors <- viridis::viridis(n = length(hour$date_hour))
+
+highchart() %>% 
+    hc_add_series(hour, hcaes(x = date_hour, y = ktCO2, color = custom_colors), type = "line") %>%
+    hc_tooltip(crosshairs = TRUE, borderWidth = 1.5, headerFormat = "", pointFormat = paste("Hour: <b>{point.x}</b> <br> ktCO2: <b>{point.y}</b>")) %>%
+    hc_title(text = "Diurnal cycle") %>% 
+    hc_subtitle(text = "Traffic emissions [ktCO2/month]") %>%
+    hc_xAxis(title = list(text = "Hour of day")) %>%
+    hc_yAxis(title = "",
+             allowDecimals = FALSE,
+             plotLines = list(list(
+                    color = "black", width = 1, dashStyle = "Dash", 
+                    value = mean(hour$ECO2),
+                    label = list(text = "Mean = 6.2", 
+                                 style = list(color = "black", fontSize = 14))))) %>%
+    hc_legend(enabled = FALSE) %>% 
+    hc_credits(enabled = TRUE, text = '@ZoomCityCarbonModel') %>% 
+    hc_add_theme(hc_theme_hcrt()) %>% 
+  hc_exporting(enabled = TRUE)
+
+```
+
+### 
+
+```{r}
+#week <- fread("week.csv")
+
+# Labels
+wday_lables <- c("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")
+
+# BY weeks
+week %>%
+  hchart('lollipop', hcaes(x = wday_lables , y = ktCO2, color = ktCO2)) %>% 
+  hc_add_theme(hc_theme_hcrt()) %>%
+  hc_tooltip(pointFormat = '<b>ktCO2: </b> {point.y} <br>') %>% 
+  hc_yAxis(title = list(text = '')) %>% 
+  hc_xAxis(title = list(text = '')) %>% 
+  hc_title(text = 'By Weekday',
+           style = list(fontSize = '25px', fontWeight = 'bold')) %>% 
+  hc_subtitle(text = 'Traffic emissions [ktCO2/month]',
+              style = list(fontSize = '16px')) %>% 
+  hc_credits(enabled = TRUE, text = '@ZoomCityCarbonModel') %>% 
+  hc_exporting(enabled = TRUE)
+
+```
+
+# iDistrict {data-icon="fa-search"}
+
+## Column {data-width="400"}
+
+### Find your disctrict
+
+**Get here:**
+
+```{r}
+
+# Create shared data that will be used to link filters, data table, and line plot. 
+  iDistrict_tibble$day <- as.numeric(iDistrict_tibble$day)
+  shared_data <- SharedData$new(iDistrict_tibble, group = 'hello')
+  
+  # Create filter for year and district These filters will adjust the DT datatable and PLOTLY plot. 
+  filter_slider("day", "Day", shared_data, ~day, step = 1)
+  filter_select("district", "District", shared_data, ~district, allLevels = TRUE, multiple = TRUE)
+  filter_checkbox(id = "district", label = "Select district", sharedData = shared_data, group = ~district,
+                  columns=2)
+  
+
+# # Create datatable. 
+# datatable(shared_data,
+#           rownames = FALSE,
+#           colnames = c('tCO2', 'Day', 'District'),
+#           class = 'cell-border stripe',
+#           width = '100%',
+#           extensions = "Scroller",
+#           options=list(deferRender = FALSE, 
+#                        scrollY = 280, 
+#                        scrollCollapse = TRUE,
+#                        scroller = TRUE,
+#                        dom = 't'))
+
+# # iDistrict
+# df_sum <- iDistrict_map %>%
+#   group_by(district) %>%
+#   summarize(ktCO2 = round(sum(tCO2)/1000, digits = 2)) %>% 
+#   na.omit()
+# 
+# highchart() %>%
+#   hc_chart(polar = TRUE, type = "column") %>%
+#   hc_title(text = "Traffic emissions by district in ktCO2", 
+#            style = list(fontSize = '25px', fontWeight = 'bold')) %>%
+#   hc_xAxis(categories = df_sum$district, tickmarkPlacement = "on", lineWidth = 0) %>%
+#   hc_yAxis(gridLineInterpolation = "polygon", lineWidth = 0, min = 0,  title = list(text = "")) %>%
+#   hc_add_series(data = df_sum$ktCO2, name = "ktCO2/month") %>% 
+#   hc_credits(enabled = TRUE, text = '@ZoomCityCarbonModel') %>% 
+#     hc_add_theme(hc_theme_ffx())%>% 
+#   hc_exporting(enabled = TRUE)
+
+```
+
+### 
+
+```{r}
+
+# Set a random seed. We will do this so that we can reproduce the random sample of colors we will use for our next graph. 
+set.seed(80085)
+
+# Create line graph. 
+plot_ly(shared_data, x = ~day, y = ~tCO2, 
+       color = ~district, colors = sample(colours(), 120),
+       type = 'scatter', mode = 'lines',
+       hoverinfo = 'text', text = ~paste("District: ", 
+                                         district, '<br>Day: ', day, "<br>tCO2: ", tCO2)) %>%
+       layout(showlegend = FALSE,
+              title = "trafiic emissions by Disrrict",
+              xaxis = list(title = "Day"),
+              yaxis = list(title = " tCO2")) %>%
+       layout(plot_bgcolor = 'transparent') %>% 
+       layout(paper_bgcolor = 'transparent') %>% 
+       add_markers() %>% 
+       highlight("plotly_click")
+  
+```
+
+## Column {data-width="600"}
+
+### Interactive map
+
+```{r map}
+
+pal_line <- colorFactor(palette = "viridis", domain = NULL, reverse = TRUE)
+iDistrict_map$labels <- paste0(
+  "<strong> district: </strong> ",
+  iDistrict_map$district, "<br/> ",
+  "<strong> tCO2: </strong> ",
+  iDistrict_map$tCO2, "<br/> "
+) %>%
+  lapply(htmltools::HTML)
+
+leaflet(iDistrict_map) %>%
+  addTiles(group = "OpenStreeMap.Default") %>% 
+  addProviderTiles("Esri.WorldImagery", group = "Esri.WorldImagery") %>%
+  addProviderTiles("CartoDB.DarkMatter", group = "CartoDB.DarkMatter") %>%
+  addPolygons(weight = 1, smoothFactor = 0.5,
+    #fillColor = "tCO2",
+    color = ~ pal_line(tCO2),
+    opacity = 1.0, fillOpacity = 0.5,
+    label = ~labels,
+    highlight =  highlightOptions(color = "white", weight = 2,
+      bringToFront = TRUE)
+  ) %>%
+  leaflet::addLegend(pal = pal_line, values = "",title = "Traffic tCO2 emissions", group = "Total of tCO2") %>% 
+  # layers control
+  addLayersControl(
+    baseGroups = c("OpenStreeMap.Default", "CartoDB.DarkMatter", "Esri.WorldImagery"),
+    position = "topleft",
+    options = layersControlOptions(collapsed = TRUE)
+  )
+
+```
+
+### 
+
+```{r}
+set.seed(80085)
+plot_ly(shared_data, y = ~tCO2, x = ~district, type = 'bar', color = ~district, colors = sample(colours(), 120)) %>%
+       layout(yaxis = list(categoryorder = "trace"))
+
+```
+
+# About {data-icon="fa-info-circle"}
+
+Row {data-height=900}
+-----------------------------------------------------------
+
+### about txt {.no-title .no-padding .colored}
+
+<h4>**Related Works**</h4>
+
+* Anjos, M.; Meier, F. Zooming into City and tracking CO2 traffic emissions at street level. Carbon Balance and Management(submitted).
+* Anjos, M.; Meier, F. City Carbon Budget and hourly net CO2 fluxes at 0.01º resolution for informed climate action (in preparation).
+
+<h4>**Data Source**</h4>
+
+* Traffic counting data -  https://api.viz.berlin.de/daten/verkehrsdetektion; 
+* Open Street Map features - https://wiki.openstreetmap.org/wiki/Map_features; 
+* Berlin Atlas data such as land use, density population, and high-level daily mean traffic volumes - https://fbinter.stadt-berlin.de/fb/index.jsp;
+* Meteorological data of the German Weather Service Climate Data Center - https://opendata.dwd.de/climate_environment/CDC/; 
+
+<h4>**People**</h4>
+
+The development of this interative platform was led by [Dr. Max Anjos](https://www.researchgate.net/profile/Max-Anjos/research) and joined by Dr.Fred Meier, and it is hosted at the [Chair of Climatology, Institute of Ecology, Technische Universität Berlin](https://www.klima.tu-berlin.de/index.php?show=home_start&lan=en).
+
+<h4>**Funding**</h4>
+
+This project is was financed in part by the Coordenação de Aperfeiçoamento de Pessoal de Nível Superior (CAPES) – Finance Code 001, and by the Alexander Von Humboldt Foundation.
+
+<h4>**Inspiration**</h4>
+
+After being inspired by Tavoosi's amazing interactive dashboard on suicide data (available at https://www.kaggle.com/tavoosi/suicide-data-full-interactive-dashboard) and by DSangeetha's nice dashboard on Zomato Restaurants Data (https://www.kaggle.com/code/devisangeetha/interactive-flexdashboard-in-r/report), this dashboard was created.
+
+<hr>
+
+<center>
+**Thanks** for visiting my first interactive FlexDashboard in R, the ZoomCityCarbonModel. 
+Your feedback is greatly appreciated and will help me continue to improve the dashboard's functionality and design.
+
+
+
+
