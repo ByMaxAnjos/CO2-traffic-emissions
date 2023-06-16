@@ -1,5 +1,6 @@
 # Emission Geographic Information platform::dashboard
 
+<img width="1439" alt="Screenshot 2023-06-16 at 12 41 44" src="https://github.com/ByMaxAnjos/CO2-traffic-emissions/assets/94705218/649c85fc-eecb-4b81-b382-6a451b92c168">
 
 
 ## Pre-processing dashboard data 
