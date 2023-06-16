@@ -1,10 +1,14 @@
-# Zoom City Carbon Model::traffic CO2 emissions at street level using Machine Learning
+<img width="1439" alt="Screenshot 2023-06-16 at 12 41 44" src="https://github.com/ByMaxAnjos/CO2-traffic-emissions/assets/94705218/6afe8599-cf3e-4221-b94b-9723804bd551"># Zoom City Carbon Model::traffic CO2 emissions at street level using Machine Learning
 
 <img src="https://user-images.githubusercontent.com/94705218/225165456-b2ad6b1e-9e59-4693-9e00-4371de475372.png" alt="git_zccm" width="1139"/>
 
 ## Introduction
 
-We introduce the **Zoom City Carbon Model (ZCCM)**, an R-based tool for calculating net of CO2 fluxes from urban areas at high spatial and temporal resolutions. ZCCM incorporates major sources and sinks of carbon in cities, such as road traffic, buildings, human breathing, and vegetation and soils. This document presents **ZCCM::traffic model**, which provides hourly estimates of traffic flow, average speed, and CO2 emissions at the road segment and whole-city level using local traffic data, meteorological data, spatial data, and Machine Learning techniques (ML). The **ZCCM::traffic model** is divided into three files: **Learn ML model**, **Deploy ML model**, and **Emission Geographic Information platform.** The *LearnMLmodel* trains and tests the ML-model, allowing users to assess the performance of the model for traffic estimates based on dataset. The *DeployMLmodel* generates timeseries (.csv) and maps (.multipolylines) of traffic estimates and CO2 emissions, while the [Emission Geographic Information Platform](https://github.com/ByMaxAnjos/CO2-traffic-emissions/blob/main/dashboard/Dashboad.md) communicates the outcomes of the ZCCM to users, stakeholders, research community, and public in general. This platform displays the outcomes of ZCCM in an interactive way through zoom CO2 maps and summary statistics of emissions, e.g., dashboard available on this [link](https://bymaxanjos.github.io/CO2-traffic-emissions/).
+We introduce the **Zoom City Carbon Model (ZCCM)**, an R-based tool for calculating net of CO2 fluxes from urban areas at high spatial and temporal resolutions. ZCCM incorporates major sources and sinks of carbon in cities, such as road traffic, buildings, human breathing, and vegetation and soils. This document presents **ZCCM::traffic model**, which provides hourly estimates of traffic flow, average speed, and CO2 emissions at the road segment and whole-city level using local traffic data, meteorological data, spatial data, and Machine Learning techniques (ML). 
+The **ZCCM::traffic model** is divided into three files: **Learn ML model**, **Deploy ML model**, and **Emission Geographic Information platform.** The *LearnMLmodel* trains and tests the ML-model, allowing users to assess the performance of the model for traffic estimates based on dataset. The *DeployMLmodel* generates timeseries (.csv) and maps (.multipolylines) of traffic estimates and CO2 emissions, while the [Emission Geographic Information Platform](https://github.com/ByMaxAnjos/CO2-traffic-emissions/blob/main/dashboard/Dashboad.md) communicates the outcomes of the ZCCM to users, stakeholders, research community, and public in general. This platform displays the outcomes of ZCCM in an interactive way through zoom CO2 maps and summary statistics of emissions, e.g., dashboard available on this [link](https://bymaxanjos.github.io/CO2-traffic-emissions/).
+
+<img width="1439" alt="Screenshot 2023-06-16 at 12 41 44" src="https://github.com/ByMaxAnjos/CO2-traffic-emissions/assets/94705218/99c796ea-6d1e-44f7-a6a5-43505b51a353">
+
 
 The **ZCCM::traffic model** is still undergoing peer-review and should used with caution. Methodology is based on Anjos, M.; Meier, F. Zooming into City and tracking CO2 traffic emissions at street level. Carbon Balance and Management(submitted).
 
@@ -482,4 +486,4 @@ The ZCCM::traffic dataset consists of three data formats:
 
 ## Emission Geographic Information platform
 
-Coming soon.
+To generate your dashboard, you can follow the [dashboard section](https://github.com/ByMaxAnjos/CO2-traffic-emissions/blob/main/dashboard/Dashboad.md) to get started. 
