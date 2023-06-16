@@ -9,7 +9,7 @@ The **PrepDash** has three arguments, including:
 
 -   **city**: name of your city or area.
 
--   **ipath**:path, "output_citystreet/", where are the output from *DeployMLtraffic* function (the argument cityStreet=TRUE).
+-   **ipath**:path, "output_citystreet/", where is the output from *DeployMLtraffic* function (the argument cityStreet=TRUE).
 
 -   **road**: a shapefile that describes the road segments with OSM features, which is named *iNetRoad* or *GIS_road*.
 
