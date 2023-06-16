@@ -1,4 +1,4 @@
-<img width="1439" alt="Screenshot 2023-06-16 at 12 41 44" src="https://github.com/ByMaxAnjos/CO2-traffic-emissions/assets/94705218/6afe8599-cf3e-4221-b94b-9723804bd551"># Zoom City Carbon Model::traffic CO2 emissions at street level using Machine Learning
+# Zoom City Carbon Model::traffic CO2 emissions at street level using Machine Learning
 
 <img src="https://user-images.githubusercontent.com/94705218/225165456-b2ad6b1e-9e59-4693-9e00-4371de475372.png" alt="git_zccm" width="1139"/>
 
