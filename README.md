@@ -250,6 +250,9 @@ test_recipe <- receipe_steps %>% # create a recipe for the test data
 
 ```
 
+<img width="927" alt="Screenshot 2023-06-16 at 10 11 08" src="https://github.com/ByMaxAnjos/CO2-traffic-emissions/assets/94705218/32cd4759-60ac-49b5-97dd-6906a2a5a22e">
+
+
 ### Selection and training of ML algorithm
 
 To train and test the Ml model, we used Random Forest (RF), a popular ensemble learning technique known for its ability to combine a large number of decision trees for classification or regression (Breiman, 2001).The R package [ranger](https://rdrr.io/cran/ranger/man/ranger.html) was used to run the RF for traffic flow and speed predictions.
@@ -295,6 +298,8 @@ rfModel_df_speed <- rfModel_pred_speed$predictions %>%
 write_csv(rfModel_df_speed, "rfModel_df_speed.csv")
 
 ```
+<img width="936" alt="Screenshot 2023-06-16 at 10 21 35" src="https://github.com/ByMaxAnjos/CO2-traffic-emissions/assets/94705218/0e86fc2e-2c8d-4717-bb27-35786fee7732">
+
 
 ### Model Evaluation and interpretabilty
 
@@ -348,6 +353,10 @@ variables_cars %>%
 #ggsave("importance_cars_plot.png", iplot) #Salve the plot
 
 ```
+
+<img width="1394" alt="Screenshot 2023-06-16 at 10 24 53" src="https://github.com/ByMaxAnjos/CO2-traffic-emissions/assets/94705218/1ee7df5f-cb48-4065-980f-5052729e8b68">
+
+<img width="1440" alt="Screenshot 2023-06-16 at 10 26 58" src="https://github.com/ByMaxAnjos/CO2-traffic-emissions/assets/94705218/3aa65df3-a589-4635-858f-6573f52e557a">
 
 #### ML model for average speed predictions
 
