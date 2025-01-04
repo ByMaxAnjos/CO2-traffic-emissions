@@ -1,0 +1,701 @@
+#Analysis of model: traffic
+setwd("~/Documents/CO2CityMap/Berlin/Components/Transport")
+#setwd("/Users/test/Documents/CO2CityMap/Berlin/ECO2_Berlin")
+#setwd("C:/Users/Anjos/Documents/Berlin")
+
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(lubridate, tidyverse, data.table, openair, recipes, timetk, ggthemes, latticeExtra, futureheatwaves, bbplot, echarts4r)
+library(lubridate)
+library(tidyverse)
+library(data.table)
+library(openair)
+library(recipes)
+library(timetk)
+library(ggthemes)
+library(latticeExtra)
+library(futureheatwaves)
+library(bbplot)
+library(echarts4r)
+library(RColorBrewer)
+library(corrr)
+library(raster)
+library(rasterVis)
+library(tmap)
+#======================================================================
+#CO2 emissions results
+#======================================================================
+
+#Traffic emissions
+TCO2 <- list.files(path = "output/table/",     # Identify all csv files in folder
+                  pattern = "*ETCO2.csv", full.names = TRUE) %>%
+  lapply(fread) %>%                                            # Open and store all files in list
+  bind_rows () %>%                                             # Combine data sets into one data.frame
+  setkey(date)
+
+
+# create a new dataframe called TCO2_df, using the TCO2 dataframe
+TCO2_df <- TCO2 %>%
+  # create a new column called tCO2, which is the total CO2 emissions in tons
+  mutate(tCO2 = ECO2_gmh_total/1000/1000) %>%
+  # create a new column called tE, which is the total energy consumption in kilotons
+  mutate(tE = EC_gmh_total/1000) %>%
+  filter(!is.na(tCO2)) %>%
+    distinct(date, .keep_all = TRUE)
+
+#=============================================================================================================================
+#Plot analysis
+##=============================================================================================================================
+#Map
+
+
+timeIndex_build <- seq(as.POSIXct('2019-02-01 00:00:00', tz='UTC'), length=24, by='hour')
+build_map <- setZ(job_airT_stack, timeIndex_build)
+names(build_map) <- format(timeIndex_build, 'h%H')
+rasterVis::levelplot(build_map[[10]], marin = FALSE)
+
+## use memory instead of file
+build_map[] <- getValues(build_map)
+
+pal8 <- colorRampPalette(colors=c("#FEE5D9", "#FCAE91", "#FB6A4A", "#DE2D26", "#A50F15"))
+tm_shape(build_map[[10]])+
+  tm_raster(n=10, palette = "Spectral", style =  "fisher", auto.palette.mapping = TRUE,
+            title = "µmolCO2/m3/h") +
+  tm_layout(scale = 1.8)+
+  qtm(study_area, fill = NULL)
+
+
+tmap_mode("view")
+tm_shape(build_map[[10]])+
+  tm_raster(n=10, palette = "Spectral", style =  "fisher", auto.palette.mapping = TRUE,
+            title = "µmolCO2/m3/h") +
+  tm_layout("CO2 emissions from buldings", title.position = c('right','top'))+
+  qtm(study_area, fill = NULL)+
+  tm_basemap(leaflet::providers$NASAGIBS)
+
+# Create map
+tm_shape(build_map[[10]]) +
+  tm_raster(n=20, palette = "Spectral", style =  "fisher", auto.palette.mapping = TRUE,
+            title = "µmolCO2/m3/h") +
+  tm_layout(legend.title.size = 0.8, legend.title.fontface = "bold",
+            legend.text.size = 0.6, legend.text.fontface = "bold",
+            legend.frame = FALSE, legend.outside = TRUE,
+            legend.position = c("right", "center")) +
+  tm_compass(type = "4star", position = c("right", "top")) +
+  # tm_scale_bar(breaks = c(0, 1, 2, 5, 10, 20, 30, 40, 50),
+  #              position = c("left", "bottom"), size = 0.4) +
+  #tm_credits("Source: Happy Planet Index 2016")+
+  tm_graticules(lwd = 0.1)+
+  qtm(study_area, fill = NULL)
+
+
+# Time series
+TCO2_df %>% timeAverage(pollutant = "tCO2", avg.time = "day", statistic = "sum") %>%
+  filter(tCO2>2) %>%
+    timePlot(pollutant = c("tCO2"),
+              #name.pol = c("Observed CO2flux", "Modelled CO2flux"),
+             key = FALSE, auto.text = TRUE, cols = "red",
+             fontsize = 28, ldw= 0.01, ylim= (c(0, 8)),
+             par.settings = list(panel.background = list(col = "white")),
+             ylab = "Daily of traffic emissions [ktCO2]")
+             #main = expression("CO"[2] * "Emissions from road transportation"))
+
+
+# Time series
+TCO2_df %>% selectByDate(year = 2020, month = "sep", day = 1, hour= 0:23) %>%
+  timePlot(pollutant = c("tCO2"),
+           #name.pol = c("Observed CO2flux", "Modelled CO2flux"),
+           key = FALSE, auto.text = TRUE, cols = "red", smooth = TRUE,
+           fontsize = 28, lwd = 0.01, ylim= (c(80, 450)),
+           par.settings = list(panel.background = list(col = "white")),
+           ylab = "Hourly of traffic emissions [tCO2]")
+#main = expression("CO"[2] * "Emissions from road transportation"))
+
+
+traffic_data %>%
+timePlot(
+         pollutant = c("kfz"),
+         avg.time = "year", normalise = "1/1/2015",
+         lwd = 4, lty = 1, ylim = c(0, 120))
+
+traffic_data %>% selectByDate(year = 2020, month = "sep", day = 1, hour= 0:23) %>%
+  timePlot(pollutant = c("kfz"),
+           avg.time = "day",  #name.pol = c("Observed CO2flux", "Modelled CO2flux"),
+           key = FALSE, auto.text = TRUE, cols = "darkred", smooth = TRUE,
+           fontsize = 28, lwd = 0.1, lty = 1, #smooth = TRUE,
+           par.settings = list(panel.background = list(col = "white")),
+           ylab = "Traffic flow [vehicle/day]")
+#main = expression("CO"[2] * "Emissions from road transportation"))
+
+#Annual city accounting emissions
+
+# lak <- fread("inputs/data/LAK_CO2.csv") %>%
+#   rename(year = V1,
+#          PTV_TCI = V2) %>%
+#   filter(year >=2015)
+monitor<- openair::timeAverage(monitor_df, pollutant = "value", avg.time = "year", statistic = "sum") %>%
+  mutate(year = year(date)) %>%
+  rename(CM_Cities = value) %>% mutate(CM_Cities = round(CM_Cities, digits = 0)) %>%
+  select(year, CM_Cities)
+
+iplot <- TCO2_df %>% dplyr::select(date, tCO2) %>% selectByDate(year = 2015:2022) %>%
+  mutate(ML_model = tCO2/1000) %>%
+  openair::timeAverage(pollutant = "ML_model", avg.time = "year", statistic = "sum") %>%
+  mutate(ML_model = round(ML_model, digits = 0)) %>%
+  mutate(year = year(date)) %>%
+  # merge(lak, by = "year", all = TRUE) %>%
+  #merge(monitor, by = "year", all = TRUE) %>%
+  pivot_longer(cols = c(ML_model), names_to = "dataset", values_to = "ktCO2") %>%
+  ggplot(aes(fill = dataset, y = ktCO2, x= as.factor(year), label = ktCO2)) +
+  geom_bar(position="dodge", stat="identity", show.legend = FALSE) +
+  geom_hline(yintercept = 1626, color = "black", linetype = "longdash") +
+  geom_text(position = position_dodge2(width = 0.9, preserve = "single"),vjust=-0.3, hjust=0.4, size = 5)+
+  #geom_text(aes(x = as.factor(year), label = ktCO2), vjust = -0.3, size = 4) +
+  labs(x = "", y = "Traffic emissions [ktCO2/yr]") +
+  scale_fill_viridis_d(direction = 1) +
+  theme_classic(base_size = 18)
+ggsave("citycounting.png", iplot)
+
+#Trend estimates using Theil-Sen function
+plot2 <- TCO2_df %>% selectByDate(year= 2015:2021) %>%
+  TheilSen(pollutant = c("tCO2"),
+          date.breaks = 3,
+         deseason = TRUE,
+         date.format = "%Y",
+         pch = 21, cex = 0.5,
+         fill = "dodgerblue",
+         fontsize = 16,
+         ylab = "Seasonly CO2 emissions [kg CO2]")
+
+plot1 <- plot2$data[[2]]
+
+
+TCO2_df %>% selectByDate(year = 2015:2021) %>%
+  #filter(cars_sampled > quantile(cars_sampled, 0.05) & cars_sampled < quantile(cars_sampled, 0.95)) %>%
+  #smoothTrend(pollutant = c("cars_sampled"), deseason = TRUE, simulate = TRUE, ylab = " Montly mean volume of vehicles")
+  TheilSen(pollutant = c("ECO2_micro_sampled"),
+           date.breaks = 3,
+           deseason = TRUE,
+           date.format = "%Y",
+           pch = 21, cex = 0.5,
+           fill = "darkorange2",
+           fontsize = 16,
+           ylab = "Monthly volume of vechile")
+
+
+# Time variation = Model vs observed CO2
+png("timevariation.png", units = "in", width = 25, height = 18, res = 300)
+TCO2_df %>% #selectByDate(year = 2019) %>%
+  timeVariation(pollutant = c("tCO2"),
+                            name.pol = c("tCO2"), cols =  "firebrick",
+                            local.tz = "Europe/Berlin",
+                            statistic = "median", auto.text = TRUE,
+                            fontsize = 30, ylim = c(0, 400), lwd = 3,
+                            ylab = "")
+dev.off()
+ggsave("timevariations.png", plot)
+
+
+plot(subset = "hour", ylab = expression("CO"[2] * " (" * mu * "mol m" ^-2 * " s" ^-1 *")"),
+         main = "TUCC - Hourly mean of CO2 fluxes")
+  #plot(subset = "day.hour")
+  #plot(subset = "day")
+  #plot(subset = "month")
+
+#Warming Stripes CO2 emissions plot
+CO2_stripes <- TCO2_df %>% #selectByDate(year = 2020, hour= 0:23) %>%
+  timePlot(pollutant = c("tCO2"),
+           avg.time = "week", statistic = "mean")
+CO2_stripes <- CO2_stripes$data %>%
+  dplyr::select(date, variable, value) %>%
+  pivot_wider(id_cols = date, names_from = variable, values_from = value) %>%
+  mutate(date = lubridate::ymd(date))
+
+theme_strip <- theme_minimal()+
+  theme(axis.text.y = element_blank(),
+        axis.line.y = element_blank(),
+        axis.title = element_blank(),
+        panel.grid.major = element_blank(),
+        legend.title = element_blank(),
+        axis.text.x = element_text(vjust = 1),
+        panel.grid.minor = element_blank(),
+        plot.title = element_text(size = 18, face = "bold")
+  )
+
+theme_max <-
+  theme(axis.text = element_text(color = "white", size = 14, hjust = 0.2),
+        axis.text.y = element_blank(),
+        axis.line.y = element_blank(),
+        axis.title = element_blank(),
+        panel.grid.major = element_blank(),
+        legend.title = element_blank(),
+        legend.background = element_rect(fill=NA),
+        legend.text = element_text(color = "white", size = 14),
+        #panel.grid.minor = element_blank(),
+        plot.title = element_text(size = 25, face = "bold", color = "white"),
+        plot.subtitle = element_text(size = 16, color = "white"),
+        plot.caption = element_text(size = 12, color = "white"),
+        plot.background = element_rect(fill = "black")
+  )
+col_strip <- brewer.pal(11, "RdYlGn")
+#png(filename = "traffic_warmingStripesCO2_2015_2022_max.png", units="in", width=14, height=5, res=600)
+ggplot(CO2_stripes,
+       aes(x = date, y = 1, fill = tCO2))+
+  geom_tile(show.legend = TRUE)+
+  scale_x_date(date_breaks = "1 years", date_labels = "%Y", expand = c(0, 0))+
+  scale_y_continuous(expand = c(0, 0))+
+  scale_fill_gradientn(colors = rev(col_strip))+
+  guides(fill = guide_colorbar(barwidth = 1, barheight =30, size = 8))+
+  labs(title = expression("Berlin • tCO"[2] * " emissions from road transportation"),
+       caption = 'Source: ©2022 Max Anjos, ZoomCityCO2model https://github.com/ByMaxAnjos, Data: Mobility data from Digital Platform City Traffic Berlin')+
+  theme_max
+#dev.off()
+
+#=============================================================================================================================
+#COVID-2019
+#=============================================================================================================================
+
+#Get data automatically others indices
+covid <- read.delim('https://raw.githubusercontent.com/OxCGRT/covid-policy-tracker-legacy/main/legacy_data_202207/OxCGRT_latest.csv',
+                    fill = TRUE, header = TRUE, sep = ",")
+#covid <- fread("Transport/COVID-19/owid-covid-data.csv")
+covid_df <- covid %>% janitor::clean_names() %>%
+  filter(country_name == "Germany") %>% as_tibble()
+covid_df$date <- as.POSIXct(anytime::anydate(covid_df$date), format="%Y-%m-%d")
+covid_df <- openair::timeAverage(covid_df, avg.time = "day")
+
+
+png(
+  "test.png",
+  width     = 3.25,
+  height    = 3.25,
+  units     = "in",
+  res       = 1200,
+  pointsize = 4
+)
+
+png("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/stringency.png",
+    width     = 8.25,
+    height    = 7.25,
+    units     = "in",
+    res       = 600,
+    pointsize = 4)
+openair::timePlot(covid_df,
+                  pollutant = c("stringency_index"), #ref.y = list(h = 65, lty = 5),
+                  ylab = "Daily Oxford Stringency Index [0-100]",
+                  cols = "viridis", key = FALSE, ylim = c(0, 100),
+                  fontsize = 22, lwd = c(3), lty = 1,
+                  date.format = "%b-%y")
+# trellis.last.object() +
+#   layer(ltext(x = lubridate::ymd_hm("2022-04-02 00:00"), y = 67,
+#               size = 25, labels = "Lockdown period >65", col = "#ff7f2f"))
+dev.off()
+
+#Define periods based on stringency_index values 0 - 100
+LOCK <- covid_df %>% filter(stringency_index >65) %>% dplyr::select(date, stringency_index) %>%
+  rename(Lockdown=stringency_index)
+covid_df %>%
+  left_join(LOCK, by="date") %>%
+  openair::timePlot(
+                  pollutant = c("stringency_index", "Lockdown"), group = TRUE,
+                  ref.y = list(h = 65, lty = 5),
+                  cols = "jet", key = FALSE, ylim = c(0, 10, 100),
+                  fontsize = 25, lwd = c(3), lty = 1,
+                  date.format = "%b-%y")
+
+openair::timePlot(covid_df,
+                  pollutant = c("stringency_index", "c1_school_closing", "c2_workplace_closing",
+                                "c3_cancel_public_events", "c4_restrictions_on_gatherings",
+                                "c6_stay_at_home_requirements", "c7_restrictions_on_internal_movement",
+                                "c8_international_travel_controls"),
+                  #name.pol = c("SI", "C1", "C2", "C3", "C4", "C5", "C6", "C7","C8"),
+                  smooth = TRUE, cols = "jet",  y.relation = "free", key.columns = 2, key.position = "top",
+                  normalise = "mean",
+                  date.format = "%b-%Y", ylab = NULL,
+                  fontsize = 12, lwd = c(1), lty = 2)
+
+TCO2_df <- daily_2015_2023 %>%
+  mutate(date = as.Date(date))
+
+TCO2_lock <- inner_join(LOCK, TCO2_df, by= "date") %>% mutate(COVID = "LOCK") %>%
+  openair::timeAverage(avg.time = "day") %>% mutate(COVID = "3.LOCK") %>%
+  na.omit()
+
+BASE <- TCO2_df %>%
+  selectByDate(start = "21/3/2019", end = "31/7/2019", hour = 0:23) %>%
+  openair::timeAverage(avg.time = "day") %>% mutate(COVID = "1.BASE")
+
+PRE <- TCO2_df %>%
+  selectByDate(start = "1/1/2020", end = "20/3/2020", hour = 0:23) %>%
+  openair::timeAverage(avg.time = "day") %>% mutate(COVID = "2.PRE")
+
+POST <- TCO2_df %>%
+  selectByDate(start = "1/8/2021", end = "1/10/2021", hour = 0:23) %>%
+  openair::timeAverage(avg.time = "day") %>% mutate(COVID = "4.POST")
+
+ACTUAL <- TCO2_df %>%
+  selectByDate(start = "21/3/2022", end = "30/6/2022", hour = 0:23) %>%
+  openair::timeAverage(avg.time = "day") %>% mutate(COVID = "5.ACTUAL")
+
+#join table
+COVID_CO2 <- bind_rows(BASE, PRE, TCO2_lock, POST, ACTUAL) %>%
+  mutate(tCO2_PC=CO2_PC_gkm/1000/1000,
+         tCO2_HDT=CO2_HDV_gkm/1000/1000)
+
+#Plot the periods
+
+test <- test$data$day
+test %>%
+  group_by(wkday, variable) %>%
+  summarise(Mean = round(mean(Mean), digits = 0),
+            Lower = round(mean(Lower), digits = 0),
+            Upper = round(mean(Upper), digits = 0), .groups = "drop") %>%
+  rename(PERIOD =  variable) %>%
+  ggplot(aes(x = wkday, y = Mean, colour = PERIOD)) +
+  geom_line(size = 1) +
+  geom_errorbar(aes(x = wkday, ymin = Lower, ymax = Upper),
+                width=0.1,size=1) +
+  #geom_hline(yintercept = 0, size = 1, colour="#333333") +
+  scale_colour_manual(values = c("#FAAB18", "#1380A1", "green", "purple", "red")) +
+  scale_x_continuous(breaks=1:7, labels = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"))+
+  theme_minimal(base_size = 22) +
+  xlab("") + ylab("")+
+  labs(title="COVID-19 peridos",
+       subtitle = "Weekly mean of traffic CO2 emissions (21.03.2019 - 30.06.2022)")
+
+options(digits = 0)
+COVID_results <-  COVID_CO2 %>% timeVariation(pollutant = c("tCO2_PC", "tCO2_HDT"), type = "COVID")
+COVID_results <- COVID_results$data$day.hour %>%
+  dplyr::select(-hour)
+write_csv(COVID_results, "/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/articleML/COVID_results2.csv")
+
+test %>%
+  group_by(wkday, variable) %>%
+  summarise(Mean = round(mean(Mean), digits = 0),
+            Lower = round(mean(Lower), digits = 0),
+            Upper = round(mean(Upper), digits = 0), .groups = "drop")
+
+RFC <- COVID_results %>%
+  pivot_wider(id_cols = wkday, names_from = COVID, values_from = c(Mean, Lower, Upper)) %>%
+  group_by(wkday)
+  summarise(RFC_pre = Upper_2.PRE - Upper_1.BASE /Upper_1.BASE * 100,
+            RFC_lock = Upper_3.LOCK - Upper_1.BASE /Upper_1.BASE * 100,
+            RFC_post = Upper_4.POST - Upper_1.BASE /Upper_1.BASE * 100,
+            RFC_actual =Upper_5.ACTUAL - Upper_1.BASE /Upper_1.BASE * 100) %>%
+    ungroup()
+
+NiceLine %>%
+  ggplot(aes(x=wkday_numer, y=tCO2, group=PERIOD, color=PERIOD, fill=tCO2)) +
+  #geom_hline(yintercept = 0, color="white") +
+  geom_line(size = 2) +
+  #geom_text(data = annotation, aes(x=month_number, y=t_diff, label=year, color=year), inherit.aes = FALSE, hjust = 0, size = 5, nudge_x = 0.15, fontface = "bold") +
+  scale_x_continuous(breaks=1:7, labels = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"), sec.axis = dup_axis(name = NULL, labels=NULL)) +
+  scale_y_continuous(sec.axis = dup_axis(name = NULL, labels=NULL)) +
+  #scale_size_manual(breaks= c(FALSE, TRUE), values = c(0.25, 1), guide = "none") +
+  scale_color_viridis_d(direction = 1) +
+  coord_cartesian(xlim=c(1,7)) +
+  labs(x = NULL,
+       y = NULL,
+       title = "COVID-19 pandemic impacts on weekly mean of tCO2 emissions") +
+  theme(
+    panel.background = element_rect(fill="black", color="white", size=1),
+    plot.background = element_rect(fill = "#444444"),
+    panel.grid = element_blank(),
+    axis.text = element_text(color="white", size=14),
+    axis.ticks = element_line(color="white"),
+    axis.ticks.length = unit(-5, "pt"),
+    axis.title = element_text(color="white", size=13),
+    plot.title = element_text(color="white", hjust = 0.5, size = 17),
+    legend.title = element_text(color="white", size=17),
+    legend.key = element_blank(),
+    legend.background = element_rect(fill = NA),
+    legend.text = element_text(color="white", size = 15),
+    legend.key.height = unit(60, "pt")
+  )
+#trellis.last.object() +
+  #layer(ltext(x = 1, y = 150, size = 12, labels = "• LOCK |SI >65|:2020-03-21/2020-07-31", col = "white"))
+
+
+#Explore association between CO2 and other indexes. Select the C*_indexes
+openair::timePlot(covid_df,
+                  pollutant = c("stringency_index", "c1_school_closing", "c2_workplace_closing",
+                                "c3_cancel_public_events", "c4_restrictions_on_gatherings",
+                                "c6_stay_at_home_requirements", "c7_restrictions_on_internal_movement",
+                                "c8_international_travel_controls"),
+                  #name.pol = c("SI", "C1", "C2", "C3", "C4", "C5", "C6", "C7","C8"),
+                  cols = "jet",  y.relation = "free", key.columns = 2, key.position = "top",
+                  date.format = "%b-%Y", ylab = NULL,
+                  fontsize = 12, lwd = c(2), lty = 1,
+                  main = "OxCGRT indexes")
+
+
+#Filter the indexes and #Merge with tCO2 by date
+covid_index <- covid_df %>%
+  dplyr::select(date, starts_with(c("c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8")),
+                -ends_with("_flag"))
+covid_index$date <- as.POSIXct(anytime::anydate(covid_index$date), format="%Y-%m-%d")
+
+covid_index <- covid_index %>%
+  mutate(date = as.Date(date))
+
+TCO2_index <- TCO2_df %>%
+  mutate(tCO2_PC=CO2_PC_gkm/1000/1000,
+        tCO2_HDT=CO2_HDV_gkm/1000/1000) %>%
+  dplyr::select(date, tCO2_PC, tCO2_HDT) %>% as_tibble() %>%
+  openair::timeAverage(avg.time = "day") %>%
+  inner_join(covid_index, by= "date")
+write_csv(TCO2_index, "/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/articleML/correlation_CO2_gover_response2.csv")
+
+options(digits = 2)
+iplot <- TCO2_index %>%
+  select(-tCO2_HDT) %>%
+  dplyr::select(-date) %>%
+  na.omit() %>%
+  correlate(method = "spearman") %>%
+  rearrange() %>%
+  ggplot2::autoplot() +
+  theme(text = element_text(size=18),
+    legend.text = element_text(size = 15))
+ggsave("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/articleML/Correlation_COVID.png",
+       iplot, width = 14, height = 8, dpi = 600)
+
+
+TCO2_index %>%
+  dplyr::select(-date) %>%
+  na.omit() %>%
+  correlate(method = "spearman") %>%
+  rearrange() %>%
+  ggplot2::autoplot() +
+  #network_plot(colours = c("darkred", "white", "darkblue"), min_cor = .1) +
+  theme(
+    #panel.background = element_rect(fill="#444444", color="black", size=1),
+    plot.background = element_rect(fill = "#cadce4"),
+    panel.grid = element_blank(),
+    plot.title = element_text(color="white", hjust = 0.5, size = 17),
+    legend.title = element_text(color="white", size=17),
+    legend.key = element_blank(),
+    legend.background = element_blank(),
+    legend.text = element_text(color="black", size = 15),
+    legend.key.height = unit(20, "pt"),
+    legend.position = "bottom",
+    legend.direction = "horizontal",
+    legend.key.size = unit(70, "pt"),
+  )
+
+
+
+# #Dimensionality reduction using PCA
+# recipe_steps <- recipe(tCO2~., data = TCO2_index) %>% #Recipe
+#   step_rm(date) %>%
+#   step_orderNorm(all_numeric_predictors()) %>%
+#   step_normalize(all_numeric_predictors())
+# #step_pls(all_numeric_predictors(), outcome = "tCO2", num_comp = 4)
+# rec_processed <- prep(recipe_steps)
+#
+#
+# plot_extract_results <- function(recipe_steps, dat = TCO2_index) { #Feature extraction plot
+#   recipe_steps %>%
+#     prep() %>%
+#     bake(new_data = dat) %>%
+#     ggplot() +
+#     geom_autopoint(aes(color = tCO2), alpha = 0.8, size = 3) +
+#     geom_autodensity(alpha = .6) +
+#     facet_matrix(vars(-tCO2), layer.diag = 2) +
+#     scale_color_distiller(palette = "BuPu", direction = 1) +
+#     labs(color = "tCO2")
+# }
+#
+# rec_processed %>%
+#   step_pls(all_numeric_predictors(), outcome = "tCO2", num_comp = 2) %>% #PARTIAL LEAST SQUARES #Explore variables
+#   plot_extract_results() %>%
+#   ggtitle("Partial Least Squares")
+
+#======================================================================
+#Get Carbon project monitor
+#======================================================================
+
+monitor_df <- fread("Transport/CarbonProject/carbonmonitor-cities_datas_2022-09-11.csv") %>%
+  filter(city == "Berlin", sector == "Ground Transport") %>% as_tibble()
+monitor_df$date <- as.POSIXct(anytime::utctime(monitor_df$timestamp), format="%Y-%m-%d")
+monitor_df <- openair::timeAverage(monitor_df, avg.time = "day")
+openair::timePlot(monitor_df,
+                  pollutant = c("value"),
+                  smooth = TRUE, cols = "viridis",
+                  date.format = "%b-%Y",
+                  fontsize = 12, lwd = c(1), lty = 1,
+                  main = "Berlin - Ground Transport ktCO2")
+
+monitor_df %>%
+  mutate(year = year(date)) %>%
+  group_by(year) %>%
+  summarise(test = sum(value))
+
+TCO2_berlin <- TCO2_df %>% selectByDate(year = 2019:2021) %>%
+  dplyr::select(date, tTCO2)
+TCO2_berlin$date <- as.POSIXct(anytime::utctime(TCO2_berlin$date), format="%Y-%m-%d")
+TCO2_berlin <- openair::timeAverage(TCO2_berlin, pollutant = "tTCO2", avg.time = "day", statistic = "sum") %>%
+  na.omit()
+
+
+# identify and remove outliers using the filter() function and a logical condition
+Q1 <- quantile(TCO2_berlin$tCO2, .1) #outliers
+Q3 <- quantile(TCO2_berlin$tCO2, .99)
+IQR <- IQR(TCO2_berlin$tCO2)
+
+TCO2_berlin <- TCO2_berlin %>%
+  subset(TCO2_berlin$tCO2 > (Q1 - 1.5*IQR) & TCO2_berlin$tCO2 < (Q3 + 1.5*IQR))
+
+Carbon_TCO2 <- inner_join(TCO2_berlin, monitor_df, by= "date") %>%
+  mutate(ML_model = tCO2/1000) %>% #convert to ktCO2
+  rename(CM_cities = value) %>%
+  mutate(rel.change = 100 * (ML_model- CM_cities)/ CM_cities,
+         abs.change = ML_model - CM_cities)
+
+summary(Carbon_TCO2)
+
+Carbon_TCO2 %>%
+  openair::timeAverage(avg.time = "year", statistic = "sum")
+
+#Plot
+library(lubridate)
+library(latticeExtra)
+library(cowplot)
+Carbon_TCO2 %>%
+  openair::timePlot(
+                  pollutant = c("CM_cities", "ML_model"), group = TRUE,
+                  cols = c("dodgerblue", "firebrick"),
+                  date.format = "%b-%Y", ylim = c(0, 6),
+                  fontsize = 28, lwd = c(2, 2), lty = 1,
+                  ylab = "Daily CO2 emissions [ktCO2]",
+                  main = "")
+# add shaded polygon
+trellis.last.object() +
+  layer(lpolygon(x = c(as.POSIXct("2020-01-19"), as.POSIXct("2020-01-19"),
+                       as.POSIXct("2020-07-30"), as.POSIXct("2020-07-30")),
+                 y = c(-1, 7, 7, -1),
+                 col = "grey", border = NA), under = TRUE, rows = 2)
+# ## add text
+# trellis.last.object() +
+#   layer(ltext(x = ymd("2020-01-21"), y = 4.5,
+#               labels = "!!COVID-19 lockdon!!", col = "yellow",
+#               font = 2, cex = 1.5), rows = 2)
+
+# plot2 <- Carbon_TCO2 %>%
+#   openair::timePlot(
+#     pollutant = c("abs.change"),
+#     name.pol = c("Absolute difference"),
+#     cols = "darkorange2",
+#     date.format = "%b-%Y",
+#     fontsize = 20, lwd = c(2), lty = 1, auto.text = TRUE,
+#     ylab = "CO2 emissions [ktCO2]",
+#     main = "")
+
+plot2 <- Carbon_TCO2 %>%
+  openair::timePlot(
+    pollutant = c("rel.change"),
+    name.pol = "Relative difference",
+    cols = "darkblue",
+    date.format = "%b-%Y", ylim = c(-100, 100),
+    fontsize = 20, lwd = c(2), lty = 1,
+    ylab = "Percentage (%)",
+    main = "")
+
+
+plot3 <- scatterPlot(Carbon_TCO2, x = "CM_cities", y = "ML_model",
+                     pch = 21:22, cex = 0.2,
+                     fill = c("blue"),
+                     fontsize = 28,
+                     col = "blue",
+                     xlab = "CM_cities",
+                     ylab = "ML_model")
+# trellis.last.object(fontsize=22) +
+#   layer(ltext(x = 2, y = 4.7,
+#               labels = "N = 911, r = 0.67"))
+
+traffic_data <- fread("inputs/data/traffic_berlin_2015_2022_07.csv") %>%
+  dplyr::select(date, id, kfz, speed_kfz)
+
+
+fig <- traffic_data %>% #selectByDate(year = 2019:2021) %>%
+  #filter(cars_sampled > quantile(cars_sampled, 0.05) & cars_sampled < quantile(cars_sampled, 0.95)) %>%
+  #smoothTrend(pollutant = c("cars_sampled"), deseason = TRUE, simulate = TRUE, ylab = " Montly mean volume of vehicles")
+  timePlot(pollutant = c("kfz"),
+           avg.time = "year",  normalise = "1/1/2015", smooth = TRUE,
+           key = FALSE, cols = "viridis",
+           fontsize = 20, lwd = 3, plot.type = "b", pch = 20, cex = 0.5,
+           par.settings = list(panel.background = list(col = "white")),
+           ylab = " Traffic flow [normalised level]")
+
+trellis.last.object(fontsize=22) +
+  layer(ltext(x = 2015, y = 90,
+              labels = "0.2%"))
+
+# plot <- plot_grid(plot1$plot, plot2$plot, plot3$plot, plot4$plot,
+#                   labels = c("A)", "B)", "C)", "D)"),
+#                   ncol = 2, nrow = 2, common.legend = TRUE, legend = "bottom", label_size = 20)
+ggsave("Results/normalizedTraffic.png", myfig, width = 25, height = 16, scale = 0.3)
+
+
+library(latticeExtra)
+#Monte Carlo simulations
+#Fit your regression model to your data and calculate the residuals (errors)
+x <- Carbon_TCO2$ML_model
+y <- Carbon_TCO2$CM_cities
+#Use the residuals to simulate the errors in your model
+model <- lm(y ~ x)
+residuals <- residuals(model)
+#Use the residuals to simulate the errors in your model
+error_sims <- rnorm(model, mean = 0, sd = sd(residuals))
+#Use the error simulations and the input variables to simulate multiple sets of predicted values
+predicted_values_sims <- x + error_sims
+#Calculate the mean and standard deviation of the simulated predicted values
+predicted_values_mean <- mean(predicted_values_sims)
+predicted_values_sd <- sd(predicted_values_sims)
+#Use the mean and standard deviation to calculate the confidence interval
+confidence_interval <- c(predicted_values_mean - 2*predicted_values_sd, predicted_values_mean + 2*predicted_values_sd)
+
+# Calculate the mean relative difference
+mean_relative_difference <- mean((Carbon_TCO2$CM_cities - Carbon_TCO2$ML_model) / Carbon_TCO2$CM_cities)
+print(mean_relative_difference)
+metrics_carbon <-
+metrics_carbon
+
+cor(Carbon_TCO2$ML_model, Carbon_TCO2$CM_cities)^2
+
+mean <- mean(Carbon_TCO2$rel.change)
+lower <- quantile(Carbon_TCO2$rel.change, c(0.025))
+upper <- quantile(Carbon_TCO2$rel.change, c(0.975))
+ci <- paste(round(lower, 2), " - ", round(upper, 2))
+ci
+
+results <- t.test(Carbon_TCO2$rel.change, conf.level = 0.95)
+mean <- results$mean
+lower <- results$conf.int[1]
+upper <- results$conf.int[2]
+ci <- paste(round(lower, 2), " - ", round(upper, 2))
+ci
+#Calculate the mean relative difference (Rd)
+Rd = mean(Carbon_TCO2$ML_model-  Carbon_TCO2$CM_cities)/mean(Carbon_TCO2$ML_model)
+Rd = ((Carbon_TCO2$CO2model- Carbon_TCO2$CarbMonitor)/Carbon_TCO2$CarbMonitor)*100
+Rd
+library(ggplot2)
+library(scico)
+scico::scico_palette_show(palettes = "roma")
+
+Carbon_TCO2 %>%
+select(date, abs.change, rel.change) %>%
+ggplot(aes(x=date)) +
+  geom_line(aes(y=abs.change, color = "abs.change")) +
+  geom_line( aes(y=rel.change, color = "rel.change")) + # Divide by 10 to get the same range than the temperature
+  #scale_x_continuous(breaks = seq(0, 336, 24)) +
+  scale_y_continuous(sec.axis = sec_axis(~.*1)) +
+  scale_color_manual(values = c("orange2", "gray30"))+
+  theme_classic()
+Carbon_TCO2 %>%
+  select(date, abs.change, rel.change) %>%
+  ggplot(aes(x=date, y=abs.change)) +
+  geom_line() +
+  ylab("Left Y-axis") +
+  xlab("Date") +
+  geom_line(aes(x=date, y=rel.change), color="red") +
+  scale_y_continuous(sec.axis = sec_axis(~., name = "Right Y-axis"))
+

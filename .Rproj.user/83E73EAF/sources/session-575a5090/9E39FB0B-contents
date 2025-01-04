@@ -1,0 +1,1927 @@
+#DEPLOY BOTTOM-UP ML MODEL FOR TRAFFIC EMISSIONS
+
+# Load package ------------------------------------------------------------
+library(tidyverse) #A collection of packages for data manipulation and visualization, including dplyr, ggplot2, and tidyr
+library(data.table) #A package for fast and efficient data manipulation.
+library(sf) #A package for working with spatial data using the Simple Features (SF) standard.
+library(openair) #A package for air quality data analysis and visualization.
+library(recipes) #A package for preprocessing data using a formula-based interface.
+library(timetk) #A package for manipulating time series data in R.
+library(ranger) #A package for building fast and accurate random forests models.
+library(tidymodels) #A package for training and evaluating machine learning models in R.
+library(doParallel)
+library(lubridate)
+library(ggdist)
+# Pre-processing counting traffic stations --------------------------------
+
+stations_csv <- fread("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/CO2-traffic-emissions/data/counting_stations_berlin.csv", dec=",") #Read cvs counting stations.
+#stations_shp <- sf::read_sf("shps/yourshapfile.shp")
+
+prep_stations_data <- function(station.df = stations_csv, station.shp = NULL, id = "id") {
+  
+  
+  if(!is.null(station.df)) {
+    
+    stations <- station.df %>%
+      janitor::clean_names() %>%
+      dplyr::rename(id = {{ id }}) %>%
+      dplyr::mutate(id = as.factor(id)) %>%
+      #distinct(longitude, latitude, .keep_all = TRUE) %>% #Eleminate duplicity
+      sf::st_as_sf(coords = c("longitude", "latitude"), crs=4326) #Convert stations csv file to shapefile based on column Latitude and Longitude.
+    
+    return(stations)
+    
+  } else {
+    
+    stations <- station.shp %>%
+      janitor::clean_names() %>%
+      dplyr::rename(id = {{ id }}) %>%
+      dplyr::mutate(id = as.factor(id)) %>%
+      sf::st_as_sf() %>%
+      sf::st_transform(crs=4326)
+    
+    return(stations)
+    
+  }
+  
+}
+
+my_stations <- prep_stations_data(station.df = stations_csv, id="id")
+
+auto_stations <- sf::read_sf("/Users/co2map/Documents/auto_berlin/BER_traffic_stations.gpkg") %>%
+  dplyr::rename(id = DZ_Nr, geometry = geom) %>%
+  dplyr::mutate(id = as.factor(id)) %>%
+  select(id, geometry)
+
+iNetRoad <- st_read("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/CO2-traffic-emissions/shps/iNetroad_ber.gpkg")
+
+speed_auto <- st_join(auto_stations, iNetRoad, join =st_nearest_feature, left = FALSE) %>%
+  st_drop_geometry() %>%
+  rename(speed = maxspeed) %>%
+  mutate(speed = as.character(speed)) %>%
+  select(id, speed)
+
+# Road category -----------------------------------------------------------
+road_sampled <- st_read( "/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/CO2-traffic-emissions/shps/road_sampled_ber.gpkg")
+road_nonsampled <- st_read( "/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/CO2-traffic-emissions/shps/road_nonsampled_ber.gpkg") %>% 
+  # mutate(fclass = recode(fclass, "motorway_link" = "motorway",
+  #                        "primary_link" = "primary",
+  #                        "trunk_link" = "trunk",
+  #                        "primary_link" = "primary",
+  #                        "secondary_link" = "secondary",
+  #                        "tertiary_link" = "tertiary")) %>%
+  dplyr::distinct(osm_id, .keep_all = TRUE) 
+
+# Pre-processing: traffic  ------------------------------------------------
+traffic <- readRDS("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/inputs/data/traffic_berlin_2015_2022.rds")
+traffic2 <- readRDS("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/inputs/data/traffic_berlin_2023.rds")
+traffic_auto <- readRDS("/Users/co2map/Documents/auto_berlin/auto_bun__ber_2015_2022.rds") %>% 
+  mutate(Pkw_auto = Pkw_R1 + Pkw_R2,
+         lkw_auto = Lkw_R1 + Lkw_R2,
+         kfz_auto = Pkw_auto + lkw_auto,
+         Zst= as.factor(Zst)) %>%
+  rename(id = Zst)
+
+traffic_auto <- inner_join(traffic_auto, speed_auto, by = "id")
+
+id_check <- traffic %>%
+  count(id, sort = TRUE) %>%
+  selectByDate(year=2015) %>%
+  timeAverage(avg.time = "day")
+
+id_remove <- id_check %>%
+  filter(n>6900)
+
+traffic_id <- traffic %>%
+  filter(id %in% c(id_remove$id))
+
+traffic_id %>%
+  selectByDate(year=2015:2022) %>%
+  timePlot(pollutant = c("kfz"), type="id",
+           smooth = TRUE)
+
+
+data_all_day %>% 
+  #filter(category=="sampled") %>%
+  #filter(tCO2_all < 150) %>%
+  timePlot(pollutant = c("CO2_all_gkm"),  type= "category",
+           name.pol = c("PC+HDT"),
+           auto.text = TRUE, cols = c("#4a8bad", "#ffa500"),
+           fontsize = 16, lwd = 2, lty = 1,
+           #ylab = expression("CO"[2] * " emissions (tons/day)"))
+           ylab = "Mean traffic flow/day")
+
+
+# Check traffic -----------------------------------------------------------
+
+
+# Impute missing values ---------------------------------------------------
+my_date <- weather %>% selectByDate(year=2015:2022) %>% 
+  select(date)
+
+stations <- traffic_id %>% count(id) %>% 
+  set_names("id", "n") %>% 
+  pull(id)
+#stations <- expand.grid(stations = c("100101010031388", "100101010031489", "100101010031590"))
+
+data_pre <- function(stations) {
+    df_id <- traffic_id %>% 
+      filter(id == paste0(stations))
+    df_model <-left_join(my_date, df_id, by = "date")
+    
+    #Impute speed 
+    recipe_speed <- recipes::recipe(date ~., data = df_model) %>%
+      recipes::step_impute_median(speed_kfz, speed_pkw, speed_lkw)
+    
+    df_speed <- recipe_speed %>%
+      recipes::prep(df_model) %>%
+      recipes::bake(new_data = NULL)
+    
+    #Separate to final
+    df_model_to_join <- df_speed %>% dplyr::filter(!is.na(id)) 
+    
+    df_model_speed_join <- df_speed %>%
+      dplyr::filter(is.na(id)) %>% 
+      dplyr::select(speed_kfz, speed_pkw, speed_lkw)
+    
+    #Predict traffic flow
+    df_train <- df_speed %>% 
+      dplyr::filter(!is.na(id)) %>% 
+      select(-id, -kfz, -speed_kfz, -speed_pkw, -speed_lkw)
+    
+    df_to_impute <- df_speed %>%
+      dplyr::filter(is.na(id)) 
+
+    recipe_multi_outcome <- recipes::recipe(date~., data = df_train) %>%
+      update_role(pkW, lkw, new_role = "outcome") %>% 
+      step_timeseries_signature(date) %>%
+      step_rm(date, date_index.num, date_year.iso, ends_with(".lbl"))
+    
+    train_processed <- recipe_multi_outcome %>%
+      recipes::prep(df_train) %>%
+      recipes::bake(new_data = NULL)
+    
+    test_processed <- recipe_multi_outcome %>%
+      recipes::prep(df_to_impute) %>%
+      recipes::bake(new_data = NULL)
+
+    # Function to create a workflow and fit a model for a single outcome
+    fit_single_model <- function(outcome, data) {
+      recipe <- recipe(reformulate(termlabels = setdiff(names(data), outcome), response = outcome), data = data)
+      
+      xgboost_spec <- boost_tree(mode = "regression") %>%
+        set_engine("xgboost")
+      
+      workflow <- workflow() %>%
+        add_recipe(recipe) %>%
+        add_model(xgboost_spec)
+      
+      fit(workflow, data = data)
+    }
+    
+    # Fit models for each outcome
+    outcomes <- c("pkW", "lkw")
+    models <- lapply(outcomes, fit_single_model, data = train_processed)
+    
+    # Combine the models into a named list
+    names(models) <- outcomes
+    
+    # Function to predict using the list of models
+    predict_multiple <- function(models, new_data) {
+      predictions <- lapply(models, predict, new_data = new_data)
+      as.data.frame(predictions)
+    }
+    
+    # Example of making predictions
+    new_data <- test_processed # Assuming 'test_processed' is your test dataset
+    df_predictions <- predict_multiple(models, new_data) %>%
+      rename(pkW = .pred, lkw = .pred.1) 
+    
+    #Merge data and impute speed
+    df_imputed <- df_predictions %>% as_tibble() %>% 
+      bind_cols(df_to_impute %>% select(date)) %>%
+      bind_cols(df_model_speed_join) %>% 
+      mutate(id = paste0(stations),
+             kfz = pkW + lkw) %>% 
+      select(id, kfz, speed_kfz, pkW, speed_pkw, lkw, speed_lkw, date) %>% 
+      bind_rows(df_model_to_join) %>% setDT() %>% 
+      setkey(date) %>% 
+      select(date, id, kfz, speed_kfz, pkW, speed_pkw, lkw, speed_lkw)
+  
+  return(df_imputed)
+}
+
+i <- stations <- . <- NULL
+station_process <- expand.grid(
+  stations = paste0(stations),
+  stringsAsFactors = FALSE)
+
+n.cores <- parallel::detectCores()-3
+cl <- parallel::makeForkCluster(n.cores)
+doParallel::registerDoParallel(cl)
+
+traffic_res_imputed <- foreach::foreach(
+  i=1:nrow(station_process),
+  .combine = "bind_rows",
+  .errorhandling = "remove"
+) %dopar%
+  data_pre(
+    station = station_process$stations[i])
+
+parallel::stopCluster(cl)
+
+saveRDS(traffic_res_imputed, "/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/inputs/data/traffic_berlin_2015_2022_imputed.rds")
+
+# prepare traffic ---------------------------------------------------------
+
+prep_traffic_data <- function(traffic.df = "",
+                              id = "id",  cars = "", speed = "", time = "hour", sta= "mean",
+                              ...){
+  
+  #Define the period and pre-processing
+  
+  if(!is.null(speed)) {
+    
+    traffic_mod <- traffic.df %>%
+      openair::selectByDate(...) %>%
+      dplyr::select(date, id, all_of(cars), all_of(speed)) %>%
+      dplyr::rename(cars = {{ cars }}, speed = {{ speed }}, id = {{ id }}) %>%
+      dplyr::mutate(across(cars:speed, ~ as.numeric(ifelse(. < 1, NA, .)))) %>%
+      dplyr::mutate(id = as.factor(id))
+    
+    traffic_cars <- traffic_mod %>%
+      dplyr::select(date, id, cars) %>%
+      openair::timeAverage(avg.time = time, type = id, statistic = sta) %>%
+      #na.omit() %>%
+      dplyr::mutate(cars = as.integer(cars))
+    setDT(traffic_cars)
+    traffic_cars <- traffic_cars %>% data.table::setkey(date)
+    
+    traffic_speed <- traffic_mod %>%
+      dplyr::select(date, id, speed) %>%
+      openair::timeAverage(avg.time = time, type = id, statistic = "mean") %>%
+      #na.omit() %>%
+      dplyr::mutate(speed = as.integer(speed))
+    setDT(traffic_speed)
+    traffic_speed <- traffic_speed %>% data.table::setkey(date)
+    traffic_res <- inner_join(traffic_cars, traffic_speed, by = c("date", "id"))
+    
+    impute_recipe = recipes::recipe(date ~., data = traffic_res) %>%
+      recipes::step_impute_median(cars, speed)
+    
+    traffic_res <- impute_recipe %>%
+      recipes::prep(traffic_res) %>%
+      recipes::bake(new_data = NULL)
+    
+   
+    
+    return(traffic_res)
+    
+  }
+  else{
+    
+    traffic_mod <- traffic.df %>%
+      openair::selectByDate(...) %>%
+      dplyr::select(date, id, all_of(cars)) %>%
+      dplyr::rename(cars = {{ cars }}, id = {{ id }}) %>%
+      mutate(across(cars, ~ as.numeric(ifelse(. < 1, NA, .)))) %>%
+      mutate(id = as.factor(id))
+    
+    impute_recipe = recipes::recipe(date ~., data = traffic_mod) %>%
+      recipes::step_impute_median(cars)
+    
+    traffic_mod <- impute_recipe %>%
+      recipes::prep(traffic_mod) %>%
+      recipes::bake(new_data = NULL)
+    
+    traffic_mod <- traffic_mod %>%
+      openair::timeAverage(avg.time = time, type = id, statistic = sta) %>%
+      na.omit() %>%
+      dplyr::mutate(cars = as.integer(cars),
+                    speed = as.integer(speed))
+    setDT(traffic_mod)
+    traffic_mod <- traffic_mod %>%
+      data.table::setkey(date)
+    
+    return(traffic_mod)
+  }
+  
+  
+  
+}
+
+
+traffic_res <- prep_traffic_data(traffic.df = traffic_id, cars = "kfz", speed = "speed_kfz",
+                                 year = 2020:2022, time = "day", sta = "mean")
+
+traffic_autoban <- prep_traffic_data(traffic.df = traffic_auto, cars = "kfz_auto", speed = "speed",
+                                     year = 2020:2022, time = "day", sta = "mean")
+
+traffic_test <- bind_rows(traffic_autoban, traffic_res)
+
+traffic_test <- traffic_test %>% 
+  selectByDate(start = "20/1/2020", end = "30/7/2020")
+
+
+traffic_res %>% 
+  selectByDate(year=2015:2022) %>%
+  #timeAverage(avg.time = "day") %>% 
+  summaryPlot()
+
+result <- traffic_res %>%
+        mutate(EF = ifelse(speed < 50, coeffs[["coeff1"]]*(speed^coeffs[["coeff2"]]) - coeffs[["coeff3"]]*speed + coeffs[["coeff4"]],
+                           ifelse(speed >= 80,coeffs[["coeff5"]]*(speed^coeffs[["coeff6"]]) - coeffs[["coeff7"]]*speed + coeffs[["coeff8"]],
+                                  coeffs[["coeff9"]])),
+               l = 100*0.001,
+               CO2_all_gkm = (cars*l*EF),
+               category = "nonsampled"
+        ) 
+
+# Check traffic  ----------------------------------------------------------
+
+#traffic
+
+data_cars_PC_month <- openair::timeAverage(traffic_res %>% select(date, cars), 
+                                        avg.time = "month", statistic = "mean") 
+new_fig5 <- ggplot(data_cars_month, aes(x = date)) +
+  geom_bar(aes(y = cars, fill = "(PC+HDT)"), stat = "identity") +
+  scale_fill_manual(values = c("(PC+HDT)" = "#0072B2")) +
+  scale_y_continuous(expand = c(0,0))+
+  scale_x_datetime(date_labels = "%y %b", date_breaks = "1 month", 
+                   expand = c(0,0), guide = ggplot2::guide_axis(check.overlap = TRUE)) +
+  labs(title = "",
+       x = "",
+       y = expression("CO"[2] * " emissions (tons/month)"),
+       fill = "Vehicle type") +
+  theme_ggdist()+
+  theme(legend.title = element_blank(),
+        legend.text = element_text(face = "bold", size = 16),
+        axis.title = element_text(face = "bold", size = 20),
+        axis.text.y = element_text(size = 18),
+        axis.text.x = element_text(size = 16, angle = 90),
+        plot.title = element_text(face = "bold", hjust = 0.5)) 
+
+# Pre-processing weather --------------------------------------------------
+
+weather <- fread("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/inputs/data/weather_berlin_2002_2023.csv") %>% dplyr::select(-V1)
+prep_weather <- function(data = weather,..., time= "hour", sta= "mean") {
+  
+  data <- data %>%
+    openair::selectByDate(...)
+  
+  impute_recipe <- recipes::recipe(date ~., data = data) %>%
+    recipes::step_impute_mean(all_numeric())
+  
+  data <- impute_recipe %>%
+    recipes::prep(data) %>%
+    recipes::bake(data)
+  
+  weather_var <- data %>%
+    dplyr::select(date, airT, HR, sunshine, ws, wd) %>%
+    openair::timeAverage(avg.time = time, statistic = sta) %>%
+    na.omit() %>%
+    dplyr::mutate(airT = as.integer(airT),
+                  HR = as.integer(HR),
+                  sunshine = as.integer(sunshine),
+                  ws = as.integer(ws),
+                  wd = as.integer(wd)
+                  )
+  setDT(weather_var)
+  weather_var <- weather_var %>% data.table::setkey(date)
+  
+  weather_precip <- data %>%
+    dplyr::select(date, precip) %>%
+    openair::timeAverage(avg.time = time, statistic = "sum") %>%
+    na.omit() %>%
+    dplyr::mutate(precip = as.integer(precip))
+    
+  data.table::setDT(weather_precip)
+  weather_precip <- weather_precip %>% data.table::setkey(date)
+  weather_res <- inner_join(weather_var, weather_precip, by = c("date"))
+  
+  
+  return(weather_res)
+}
+my_weather <- prep_weather(data = weather, time= "day", sta= "mean",
+                           year = 2022, month= 1:6)
+
+# Calculate CO2 emissions -------------------------------------------------
+
+ML_traffic_ts <- function(year, month, day, veh.type= "all") {
+  
+  traffic_df <- openair::selectByDate(traffic_test, year = year, month = month, day=day)
+  road_sampled_mod <- road_sampled %>% dplyr::distinct(id, .keep_all = TRUE) %>% 
+  mutate(fclass = recode(fclass, "motorway_link" = "motorway",
+                         "primary_link" = "primary",
+                         "trunk_link" = "trunk",
+                         "primary_link" = "primary",
+                         "secondary_link" = "secondary",
+                         "tertiary_link" = "tertiary"))
+  # filter(fclass == paste0(class))
+  
+  traffic_df <- dplyr::inner_join(traffic_df, road_sampled_mod, by ="id", relationship = "many-to-many")
+  train_prep <- traffic_df %>% 
+    dplyr::select(-id, -osm_id, -category, -geom)
+  
+  #Create a recipe
+   recipe_steps <- recipe(cars + speed ~ ., data = train_prep) %>%
+     step_log_interval(dtvw_kfz, dtvw_lkw, resident,resident_hac,offset = 1) %>%
+     step_holiday(date, holidays = timeDate::listHolidays("DE")) %>%
+     step_timeseries_signature(date) %>%
+     step_rm(date, contains("index.num"), contains("lbl"), contains("iso"), contains("xts"))
+  
+  #Apply the recipe
+  train_prep <- recipe_steps %>%
+    prep(train_prep) %>%
+    bake(train_prep)
+
+  #n.cores <- parallel::detectCores()-1
+  
+  #ranger cars
+  MLcars <- ranger(cars ~ ., data = train_prep %>% select(-speed), 
+                   num.trees = 500)
+  #ranger speed
+  MLspeed <- ranger(speed ~ ., data = train_prep %>% select(-cars), 
+                    num.trees = 500)
+  
+  #Deploy the model to get raster
+  iday <- traffic_df %>%
+    mutate(day = lubridate::day(date)) %>%
+    distinct(day, .keep_all = FALSE) %>%
+    expand.grid()
+  
+  job_day <- function(iday) {
+    
+    myday <-iday[1]
+    
+    traffic_model <- traffic_df %>%
+      mutate(day = lubridate::day(date)) %>%
+      filter(day== paste0(myday))
+
+    nonsampled <- road_nonsampled %>% 
+      st_drop_geometry() 
+      # mutate(fclass = recode(fclass, "motorway_link" = "motorway",
+      #                        "primary_link" = "primary",
+      #                        "trunk_link" = "trunk",
+      #                        "primary_link" = "primary",
+      #                        "secondary_link" = "secondary",
+      #                        "tertiary_link" = "tertiary")) %>% 
+      #dplyr::distinct(osm_id, .keep_all = TRUE) 
+      # filter(fclass == paste0(class))
+    
+    date_cross <-  crossing(stuff = nonsampled$osm_id, traffic_model$date) %>%
+      set_names("osm_id", "date")
+    setDT(date_cross)
+    setDT(nonsampled)
+    
+    model_join <- left_join(date_cross, nonsampled, by="osm_id")
+    #model_join <- left_join(model_join, weather, by="date")
+     
+    # Create a recipe
+    recipe_steps <- recipe(~ ., data = model_join) %>%
+      step_rm(osm_id, category) %>%
+      step_impute_median(all_numeric_predictors()) %>% 
+      step_log_interval(dtvw_kfz, dtvw_lkw, resident,resident_hac,
+                        offset = 1) %>%
+      step_holiday(date, holidays = timeDate::listHolidays("DE")) %>%
+      step_timeseries_signature(date) %>%
+      step_rm(date, contains("index.num"), contains("lbl"), contains("iso"), contains("xts"))
+    
+    # Apply the recipe
+    data_prep <- recipe_steps %>%
+      prep(model_join) %>%
+      bake(new_data = model_join) 
+    
+    #Predicting cars
+    model_pred_cars <- predict(MLcars, data=data_prep) #Applying the trained model
+    cars_pred <- as_tibble(model_pred_cars$predictions) %>%
+      bind_cols(model_join %>% dplyr::select(date)) %>%
+      bind_cols(data_prep) %>%
+      rename(cars=value) %>% 
+      mutate(cars = as.integer(cars))
+    
+    #Predicting speed
+    model_pred_speed <- predict(MLspeed, data=data_prep) #Applying the trained model
+    speed_pred <- as_tibble(model_pred_speed$predictions) %>%
+      bind_cols(model_join %>% dplyr::select(date)) %>%
+      rename(speed=value) %>% 
+      mutate(speed = as.integer(speed))
+    
+    #Join cars and speed predication
+    traffic_pred <- cars_pred %>%
+      bind_cols(speed_pred %>% dplyr::select(speed)) %>%
+      bind_cols(model_join %>% dplyr::select(osm_id))
+    
+    #Calculate CO2 emissions for non sampled roads
+
+    if(veh.type == "PC") {
+      traffic_CO2_nonsampled <- traffic_pred %>%
+        mutate(EF = (((174 + 0.364*speed + 0.00874*speed^2)/(1 + 0.0685*speed + -0.000247*speed^2)) * 44/(12.011 + 1.008 * 1.8 + 16 * 0)),
+               l = length*0.001,
+               CO2_PC_gkm = (cars*l*EF),
+               category = "nonsampled"
+        ) %>%
+        rename(cars_pc = cars, speed_pc = speed, EF_pc = EF) %>%
+        select(osm_id, category, date, cars_pc, speed_pc, length, EF_pc, l, CO2_PC_gkm)
+
+      #Calculate CO2 emissions for sampled roads
+      traffic_CO2_sampled <- traffic_model %>%
+        mutate(EF = (((174 + 0.364*speed + 0.00874*speed^2)/(1 + 0.0685*speed + -0.000247*speed^2)) * 44/(12.011 + 1.008 * 1.8 + 16 * 0)),
+               l = length*0.001,
+               CO2_PC_gkm = (cars*l*EF),
+               category = "sampled"
+        ) %>%
+        rename(cars_pc = cars, speed_pc = speed, EF_pc = EF) %>%
+        select(osm_id, category, date, cars_pc, speed_pc, length, EF_pc, l, CO2_PC_gkm)
+
+      traffic_CO2_final <- bind_rows(traffic_CO2_sampled, traffic_CO2_nonsampled)
+    }
+
+    if(veh.type == "HDT") {
+      traffic_CO2_nonsampled <- traffic_pred %>%
+        mutate(EF = (((157.588210716201+(530.706538954452*exp(((-1)*0.063386703194507)*speed)))+(2704.52844752398*exp(((-1)*0.511855003431854)*speed)))*44/(12.011+1.008*2+16*0)),
+               l = length*0.001,
+               CO2_HDT_gkm = (cars*l*EF),
+               category = "nonsampled"
+        ) %>%
+        rename(cars_hdt = cars, speed_hdt = speed, EF_hdt = EF) %>%
+        select(osm_id, category, date, cars_hdt, speed_hdt, length, EF_hdt, l, CO2_HDT_gkm)
+
+      traffic_CO2_sampled <- traffic_model %>%
+        mutate(EF = (((157.588210716201+(530.706538954452*exp(((-1)*0.063386703194507)*speed)))+(2704.52844752398*exp(((-1)*0.511855003431854)*speed)))*44/(12.011+1.008*2+16*0)),
+               l = length*0.001,
+               CO2_HDT_gkm = (cars*l*EF),
+               category = "sampled"
+        ) %>%
+        rename(cars_hdt = cars, speed_hdt = speed, EF_hdt = EF) %>%
+        select(osm_id, category, date, cars_hdt, speed_hdt, length, EF_hdt, l, CO2_HDT_gkm)
+
+      traffic_CO2_final <- bind_rows(traffic_CO2_sampled, traffic_CO2_nonsampled)
+
+    }
+    
+    if(veh.type == "all") {
+      
+      coeffs <- list(
+        # emission factor AVgSpeed < 50
+        coeff1 = 0.0928
+        , coeff2 = 2
+        , coeff3 = 9.2601
+        , coeff4 = 358.7
+        # emission factor AVgSpeed >= 80
+        , coeff5 = 0.0165
+        , coeff6 = 2
+        , coeff7 = 2.3481
+        , coeff8 = 211.68
+        # emission factor AVgSpeed >= else
+        , coeff9 = 130
+        # Conversion factor micro mol
+        , coeff10 = 0.1/100/0.1584
+        # vehic flux factor
+        , flux_veihc = 3.1293
+      )
+      
+      traffic_CO2_nonsampled <- traffic_pred %>%
+        mutate(EF = ifelse(speed < 50, coeffs[["coeff1"]]*(speed^coeffs[["coeff2"]]) - coeffs[["coeff3"]]*speed + coeffs[["coeff4"]],
+                           ifelse(speed >= 80,coeffs[["coeff5"]]*(speed^coeffs[["coeff6"]]) - coeffs[["coeff7"]]*speed + coeffs[["coeff8"]],
+                                  coeffs[["coeff9"]])),
+               l = length*0.001,
+               CO2_all_gkm = (cars*l*EF),
+               category = "nonsampled"
+        ) %>%
+        rename(cars_all = cars, speed_all = speed, EF_all = EF) %>%
+        select(osm_id, category, date, cars_all, speed_all, length, EF_all, l, CO2_all_gkm)
+      
+      traffic_CO2_sampled <- traffic_model %>%
+        mutate(EF = ifelse(speed < 50, coeffs[["coeff1"]]*(speed^coeffs[["coeff2"]]) - coeffs[["coeff3"]]*speed + coeffs[["coeff4"]],
+                           ifelse(speed >= 80,coeffs[["coeff5"]]*(speed^coeffs[["coeff6"]]) - coeffs[["coeff7"]]*speed + coeffs[["coeff8"]],
+                                  coeffs[["coeff9"]])),
+               l = length*0.001,
+               CO2_all_gkm = (cars*l*EF),
+               category = "sampled"
+        ) %>%
+        rename(cars_all = cars, speed_all = speed, EF_all = EF) %>%
+        select(osm_id, category, date, cars_all, speed_all, length, EF_all, l, CO2_all_gkm)
+      
+      traffic_CO2_final <- bind_rows(traffic_CO2_sampled, traffic_CO2_nonsampled)
+      
+    }
+
+    return(traffic_CO2_final)
+    
+  }
+  
+  cal_days <- pbapply::pbapply(iday, 1, job_day)
+  df_final <- data.table::rbindlist(cal_days)
+  #saveRDS(df_final, paste0("/Users/co2map/Documents/traffic_2019/",year,month,day,"_hourly_PC.rds"))
+  saveRDS(df_final, paste0("/Users/co2map/Documents/traffic_HDT_2019/",year,month,day,"_hourly_HDT.rds"))
+  
+  return(df_final)
+  
+}
+
+ML_traffic_ts2 <- function(class, year, month, veh.type= "PC") {
+  
+  traffic_df <- openair::selectByDate(traffic_test, year = year, month= month)
+  road_sampled_mod <- road_sampled %>% 
+    mutate(fclass = recode(fclass, "motorway_link" = "motorway",
+                           "primary_link" = "primary",
+                           "trunk_link" = "trunk",
+                           "primary_link" = "primary",
+                           "secondary_link" = "secondary",
+                           "tertiary_link" = "tertiary"))
+  traffic_df <- dplyr::inner_join(traffic_df, road_sampled, by ="id")
+
+  train_prep <- traffic_df %>% 
+    dplyr::select(-id, -StreetName, -osm_id, -category, -geom)
+  
+  #Create a recipe
+  recipe_steps <- recipe(cars + speed ~ ., data = train_prep) %>%
+    step_log_interval(dtvw_kfz, dtvw_lkw, resident,resident_hac,offset = 1) %>%
+    step_holiday(date, holidays = timeDate::listHolidays("DE")) %>%
+    step_timeseries_signature(date) %>%
+    step_rm(date, contains("index.num"), contains("lbl"), contains("iso"), contains("xts"))
+  
+  #Apply the recipe
+  train_prep <- recipe_steps %>%
+    prep(train_prep) %>%
+    bake(train_prep)
+  
+  #n.cores <- parallel::detectCores()-1
+
+  #ranger cars
+  MLcars <- ranger(cars ~ ., data = train_prep %>% select(-speed), 
+                   num.trees = 500)
+  #ranger speed
+  MLspeed <- ranger(speed ~ ., data = train_prep %>% select(-cars), 
+                    num.trees = 500)
+  
+  #Deploy the model to get raster
+  iday <- traffic_df %>%
+    mutate(day = lubridate::day(date)) %>%
+    distinct(day, .keep_all = FALSE) %>%
+    expand.grid()
+
+    job_day <- function(iday) {
+    
+    myday <-iday[1]
+    
+    traffic_model <- traffic_df %>%
+      mutate(day = lubridate::day(date)) %>%
+      filter(day== paste0(myday))
+    
+    nonsampled <- road_nonsampled %>% 
+      st_drop_geometry() %>% 
+      mutate(fclass = recode(fclass, "motorway_link" = "motorway",
+                             "primary_link" = "primary",
+                             "trunk_link" = "trunk",
+                             "primary_link" = "primary",
+                             "secondary_link" = "secondary",
+                             "tertiary_link" = "tertiary")) 
+      #dplyr::distinct(osm_id, .keep_all = TRUE) #%>% filter(fclass == paste0(class))
+    date_cross <-  crossing(stuff = nonsampled$osm_id, traffic_model$date) %>%
+      set_names("osm_id", "date")
+    setDT(date_cross)
+    setDT(nonsampled)
+    
+    model_join <- left_join(date_cross, nonsampled, by="osm_id")
+    #model_join <- left_join(model_join, weather, by="date")
+    
+    # Create a recipe
+    recipe_steps <- recipe(~ ., data = model_join) %>%
+      step_rm(osm_id, category) %>%
+      step_impute_median(all_numeric_predictors()) %>% 
+      step_log_interval(dtvw_kfz, dtvw_lkw, resident,resident_hac,
+                        offset = 1) %>%
+      step_holiday(date, holidays = timeDate::listHolidays("DE")) %>%
+      step_timeseries_signature(date) %>%
+      step_rm(date, contains("index.num"), contains("lbl"), contains("iso"), contains("xts"))
+    
+    # Apply the recipe
+    data_prep <- recipe_steps %>%
+      prep(model_join) %>%
+      bake(new_data = model_join) 
+    
+    #Predicting cars
+    model_pred_cars <- predict(MLcars, data=data_prep) #Applying the trained model
+    cars_pred <- as_tibble(model_pred_cars$predictions) %>%
+      bind_cols(model_join %>% dplyr::select(date)) %>%
+      bind_cols(data_prep) %>%
+      rename(cars=value) %>% 
+      mutate(cars = as.integer(cars))
+    
+    #Predicting speed
+    model_pred_speed <- predict(MLspeed, data=data_prep) #Applying the trained model
+    speed_pred <- as_tibble(model_pred_speed$predictions) %>%
+      bind_cols(model_join %>% dplyr::select(date)) %>%
+      rename(speed=value) %>% 
+      mutate(speed = as.integer(speed))
+    
+    #Join cars and speed predication
+    traffic_pred <- cars_pred %>%
+      bind_cols(speed_pred %>% dplyr::select(speed)) %>%
+      bind_cols(model_join %>% dplyr::select(osm_id))
+    
+    #Calculate CO2 emissions for non sampled roads
+    
+    if(veh.type == "PC") {
+      traffic_CO2_nonsampled <- traffic_pred %>%
+        mutate(EF = (((174 + 0.364*speed + 0.00874*speed^2)/(1 + 0.0685*speed + -0.000247*speed^2)) * 44/(12.011 + 1.008 * 1.8 + 16 * 0)),
+               l = length*0.001,
+               CO2_PC_gkm = (cars*l*EF),
+               category = "nonsampled"
+        ) %>%
+        rename(cars_pc = cars, speed_pc = speed, EF_pc = EF) %>%
+        select(osm_id, category, date, cars_pc, speed_pc, length, EF_pc, l, CO2_PC_gkm)
+      
+      #Calculate CO2 emissions for sampled roads
+      traffic_CO2_sampled <- traffic_model %>%
+        mutate(EF = (((174 + 0.364*speed + 0.00874*speed^2)/(1 + 0.0685*speed + -0.000247*speed^2)) * 44/(12.011 + 1.008 * 1.8 + 16 * 0)),
+               l = length*0.001,
+               CO2_PC_gkm = (cars*l*EF),
+               category = "sampled"
+        ) %>%
+        rename(cars_pc = cars, speed_pc = speed, EF_pc = EF) %>%
+        select(osm_id, category, date, cars_pc, speed_pc, length, EF_pc, l, CO2_PC_gkm)
+      
+      traffic_CO2_final <- bind_rows(traffic_CO2_sampled, traffic_CO2_nonsampled)
+    }
+    
+    if(veh.type == "HDT") {
+      traffic_CO2_nonsampled <- traffic_pred %>%
+        mutate(EF = (((157.588210716201+(530.706538954452*exp(((-1)*0.063386703194507)*speed)))+(2704.52844752398*exp(((-1)*0.511855003431854)*speed)))*44/(12.011+1.008*2+16*0)),
+               l = length*0.001,
+               CO2_HDT_gkm = (cars*l*EF),
+               category = "nonsampled"
+        ) %>%
+        rename(cars_hdt = cars, speed_hdt = speed, EF_hdt = EF) %>%
+        select(osm_id, category, date, cars_hdt, speed_hdt, length, EF_hdt, l, CO2_HDT_gkm)
+      
+      traffic_CO2_sampled <- traffic_model %>%
+        mutate(EF = (((157.588210716201+(530.706538954452*exp(((-1)*0.063386703194507)*speed)))+(2704.52844752398*exp(((-1)*0.511855003431854)*speed)))*44/(12.011+1.008*2+16*0)),
+               l = length*0.001,
+               CO2_HDT_gkm = (cars*l*EF),
+               category = "sampled"
+        ) %>%
+        rename(cars_hdt = cars, speed_hdt = speed, EF_hdt = EF) %>%
+        select(osm_id, category, date, cars_hdt, speed_hdt, length, EF_hdt, l, CO2_HDT_gkm)
+      
+      traffic_CO2_final <- bind_rows(traffic_CO2_sampled, traffic_CO2_nonsampled)
+      
+    }
+    
+    if(veh.type == "all") {
+      
+      coeffs <- list(
+        # emission factor AVgSpeed < 50
+        coeff1 = 0.0928
+        , coeff2 = 2
+        , coeff3 = 9.2601
+        , coeff4 = 358.7
+        # emission factor AVgSpeed >= 80
+        , coeff5 = 0.0165
+        , coeff6 = 2
+        , coeff7 = 2.3481
+        , coeff8 = 211.68
+        # emission factor AVgSpeed >= else
+        , coeff9 = 130
+        # Conversion factor micro mol
+        , coeff10 = 0.1/100/0.1584
+        # vehic flux factor
+        , flux_veihc = 3.1293
+      )
+      
+      traffic_CO2_nonsampled <- traffic_pred %>%
+        mutate(EF = ifelse(speed < 50, coeffs[["coeff1"]]*(speed^coeffs[["coeff2"]]) - coeffs[["coeff3"]]*speed + coeffs[["coeff4"]],
+                           ifelse(speed >= 80,coeffs[["coeff5"]]*(speed^coeffs[["coeff6"]]) - coeffs[["coeff7"]]*speed + coeffs[["coeff8"]],
+                                  coeffs[["coeff9"]])),
+               l = length*0.001,
+               CO2_HDT_gkm = (cars*l*EF),
+               category = "nonsampled"
+        ) %>%
+        rename(cars_hdt = cars, speed_hdt = speed, EF_hdt = EF) %>%
+        select(osm_id, category, date, cars_hdt, speed_hdt, length, EF_hdt, l, CO2_HDT_gkm)
+      
+      traffic_CO2_sampled <- traffic_model %>%
+        mutate(EF = ifelse(speed < 50, coeffs[["coeff1"]]*(speed^coeffs[["coeff2"]]) - coeffs[["coeff3"]]*speed + coeffs[["coeff4"]],
+                           ifelse(speed >= 80,coeffs[["coeff5"]]*(speed^coeffs[["coeff6"]]) - coeffs[["coeff7"]]*speed + coeffs[["coeff8"]],
+                                  coeffs[["coeff9"]])),
+               l = length*0.001,
+               CO2_HDT_gkm = (cars*l*EF),
+               category = "sampled"
+        ) %>%
+        rename(cars_hdt = cars, speed_hdt = speed, EF_hdt = EF) %>%
+        select(osm_id, category, date, cars_hdt, speed_hdt, length, EF_hdt, l, CO2_HDT_gkm)
+      
+      traffic_CO2_final <- bind_rows(traffic_CO2_sampled, traffic_CO2_nonsampled)
+      
+    }
+    
+    return(traffic_CO2_final)
+    
+  }
+  
+  cal_days <- pbapply::pbapply(iday, 1, job_day)
+  df_final <- data.table::rbindlist(cal_days)
+  #write.csv(CO2Traffic_sum, paste0("output/transportation/",year,month,"ECO2_Tsum.csv"))
+  
+  return(df_final)
+  
+}
+
+date_process <- expand.grid(
+  #my_classes = c("motorway", "primary", "secondary", "tertiary"),
+  year = 2020:2022,
+  month = 1:12,
+  day = 1:31,
+  stringsAsFactors = FALSE)
+
+n.cores <- parallel::detectCores()-2
+cl <- parallel::makeForkCluster(n.cores)
+doParallel::registerDoParallel(cl)
+
+data_all_day <- foreach::foreach(
+  i=1:nrow(date_process),
+  .combine = "bind_rows",
+  .errorhandling = "remove"
+  ) %dopar%
+  ML_traffic_ts(
+    #class = date_process$my_classes[i],
+    year = date_process$year[i],
+    month = date_process$month[i],
+    day = date_process$day[i],
+    veh.type = "all")
+
+parallel::stopCluster(cl)
+
+
+saveRDS(data_PC, "/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/monthly_PC_2015_2022.rds")
+saveRDS(data_HDT, "/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/monthly_HDT_2015_2022.rds")
+saveRDS(data_all_day, "/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/daily_all_2015_2022.rds")
+
+# read --------------------------------------------------------------------
+data_PC <- readRDS("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/monthly_PC_2015_2022.rds")
+data_HDT <- readRDS("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/monthly_HDT_2015_2022.rds")
+
+
+# Annual ------------------------------------------------------------------
+data_PC_annual <- openair::timeAverage(data_PC %>% select(date, CO2_PC_gkm), avg.time = "year", statistic = "sum") %>% 
+  mutate(tCO2_PC = CO2_PC_gkm/1000/1000)
+data_HDT_annual <- openair::timeAverage(data_HDT %>% select(date, CO2_HDT_gkm), avg.time = "year", statistic = "sum") %>% 
+  mutate(tCO2_HDT = CO2_HDT_gkm/1000/1000)
+
+data_all_annual <- openair::timeAverage(data_all %>% select(date, CO2_all_gkm), avg.time = "year", statistic = "sum") %>% 
+  mutate(tCO2_all = CO2_all_gkm/1000/1000)
+# monthly ------------------------------------------------------------------
+data_PC_month <- openair::timeAverage(data_PC %>% select(date, CO2_PC_gkm), 
+                                      avg.time = "month", statistic = "sum") %>% 
+  mutate(tCO2_PC = CO2_PC_gkm/1000/1000)
+data_HDT_month <- openair::timeAverage(data_HDT %>% select(date, CO2_HDT_gkm), 
+                                       avg.time = "month", statistic = "sum") %>% 
+  mutate(tCO2_HDT = CO2_HDT_gkm/1000/1000)
+
+data_all_month <- openair::timeAverage(data_all %>% select(date, CO2_all_gkm), 
+                                       avg.time = "month", statistic = "sum") %>% 
+  mutate(tCO2_all = CO2_all_gkm/1000/1000)
+
+
+# Daily -------------------------------------------------------------------
+data_PC_daily <- openair::timeAverage(data_PC_lock %>% select(date, CO2_PC_gkm), 
+                                      avg.time = "day", statistic = "sum") %>% 
+  mutate(tCO2_PC = CO2_PC_gkm/1000/1000)
+
+data_HDT_daily <- openair::timeAverage(data_HDT_lock %>% select(date, CO2_HDT_gkm), 
+                                        avg.time = "day", statistic = "sum") %>% 
+  mutate(tCO2_HDT = CO2_HDT_gkm/1000/1000)
+
+data_all_daily <- openair::timeAverage(data_all_day %>% select(date, CO2_all_gkm), 
+                                       avg.time = "day", statistic = "sum") %>% 
+  mutate(tCO2_all = CO2_all_gkm/1000/1000)
+
+
+data_all_daily <- readRDS("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/daily_all_2015_2022_results.rds") %>% 
+  openair::selectByDate(year=2015:2020)
+
+data_all_daily <- openair::timeAverage(data_all_daily %>% select(date, CO2_all_gkm), 
+                                            avg.time = "day", statistic = "sum") %>% 
+  mutate(tCO2_all = CO2_all_gkm/1000/1000) 
+
+chat_data <- data_all_daily %>% 
+  select(-CO2_all_gkm) 
+  
+write_csv(chat_data,"/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/daily_2015_2022_chat.csv" )
+# Peer-review comoment ----------------------------------------------------
+
+# Load required libraries
+library(dplyr)
+library(ggplot2)
+
+# Example dataset loading
+# Replace "daily_CO2_emissions.csv" with your actual file path
+data <- read.csv("daily_CO2_emissions.csv")
+
+# Filter for March-July and group data by year
+# march_july_data <- data_all_daily %>%
+#   selectByDate(start = "15/3/2020", end="1/6/2020") %>% 
+#   mutate(Year = lubridate::year(date))
+
+march_jun_data <- data_all_daily %>%
+  filter((month(date) == 3 & day(date) >= 15) |
+           (month(date) > 3 & month(date) < 6) |
+           (month(date) == 6 & day(date) <= 1)) %>% 
+  mutate(Year = lubridate::year(date))
+
+# Calculate the baseline (2015–2019) mean and variance
+baseline_stats <- march_jun_data %>%
+  filter(Year %in% c("2015", "2016", "2017", "2018", "2019")) %>%
+  mutate(DayOfYear = yday(date)) %>%
+  group_by(DayOfYear) %>%
+  summarise(
+    Mean_CO2 = mean(tCO2_all, na.rm = TRUE),
+    SD_CO2 = sd(tCO2_all, na.rm = TRUE)
+  )
+
+# Merge 2020 data with baseline statistics
+data_2020 <- march_jun_data %>%
+  filter(Year == "2020") %>%
+  mutate(DayOfYear = yday(date)) %>%
+  left_join(baseline_stats, by = "DayOfYear") %>% 
+  right_join(data_all_daily, by = "date")
+
+data_2019 <- data_all_daily %>%
+  select(-CO2_all_gkm) %>% 
+  selectByDate(start="2/1/2019", end="30/12/2019") %>% 
+  mutate(Year = as.factor(year(date))) %>% 
+  mutate(DayOfYear = as.factor(yday(date))) %>%
+  timeAverage(avg.time = "week", statistic = "mean", type = "DayOfYear") 
+
+data_all_daily <- fread("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/daily_2015_2022_chat.csv" )
+
+data_covid_final <- data_all_daily %>%
+  selectByDate(year=2019:2020) %>%
+  mutate(Year = as.factor(year(date))) %>% 
+  group_by(Year) %>% 
+  mutate(
+  RunningMean = zoo::rollmean(tCO2_all, 7, fill = NA, align = "center"),
+  SD = zoo::rollapply(tCO2_all, 7, sd, fill = NA, align = "center"),
+  CI_Lower = RunningMean - 1.96 * SD / sqrt(7),
+  CI_Upper = RunningMean + 1.96 * SD / sqrt(7)) %>% 
+  ungroup() %>% 
+  mutate(date= ymd(date))
+
+df_lock_2019 <- data_covid_final %>% 
+  selectByDate(start="15/3/2019", end="1/6/2019")
+summary(df_lock_2019)
+
+df_lock_2020 <- data_covid_final %>% 
+  selectByDate(start="15/3/2020", end="1/6/2020")
+summary(df_lock_2020)
+
+var_output %>% 
+  group_by(Year) %>% 
+  summarise(mean_CO2 = mean(tCO2_all), 
+            mean_lower = mean(CI_Lower),
+            mean_upper = mean(CI_Upper)) %>% 
+  summary()
+
+
+var_output <- bind_rows(df_lock_2019, df_lock_2020) %>% 
+  dplyr::select(date, Year, tCO2_all) %>% 
+  timeVariation(pollutant = "tCO2_all", type = "Year") 
+var_output$data$day  
+
+# Define the lockdown period
+lockdown_start <- as.Date("2020-03-15")
+lockdown_end <- as.Date("2020-06-01")
+line_2020 <- as.Date("2020-01-01")
+
+data_2019 %>% 
+  filter(Year=="2020") %>% summary()
+
+
+new_fig_COVID <- ggplot(data_covid_final, aes(x = date)) +
+  annotate(
+    "rect", xmin = lockdown_start, xmax = lockdown_end, 
+    ymin = -Inf, ymax = Inf, fill = "grey", alpha = 0.3, 
+    label = "Lockdown Period"
+  ) +
+  geom_ribbon(aes(ymin = CI_Lower, ymax = CI_Upper, fill = Year), alpha = 0.2) +
+  geom_line(aes(y = RunningMean, color = Year), size = 1.2) +
+  #geom_point(aes(y = tCO2_all, color = Year), size = 0.8, alpha = 0.6) +
+  scale_color_manual(values = c("2019" = "#0072B2", "2020" = "#D55E00")) +
+  scale_fill_manual(values = c("2019" = "#0072B2", "2020" = "#D55E00")) +
+  labs(
+    #title = "7-Day Running Mean of CO2 Emissions (2019 vs. 2020)",
+    #subtitle = "With 95% Confidence Intervals",
+    x = "Date",
+    y = expression("Daily tCO"[2] * " emissions"),
+    #y = expression("7-day running mean of tCO"[2] * " emissions"),
+    #y = "7-Day Running Mean of tCO2 Emissions",
+    color = "Year",
+    fill = "Year"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5),
+    plot.subtitle = element_text(size = 14, hjust = 0.5),
+    axis.title = element_text(size = 16),
+    axis.text = element_text(size = 15),
+    legend.title = element_text(size = 16),
+    legend.text = element_text(size = 16),
+    legend.position = "top"
+  ) +
+  guides(color = guide_legend(override.aes = list(size = 2))) +
+  scale_x_date(date_breaks = "2 month", date_labels = "%b")
+
+
+data <- data.frame(
+  variable = c(rep("tCO2_all", 14)),
+  wkday = rep(1:7, 2),
+  Year = rep(c("2019", "2020"), each = 7),
+  Mean = c(85.5, 87.8, 87.3, 90.2, 89.6, 74.9, 67.7, 
+           71.8, 75.6, 75.1, 77.2, 73.3, 57.3, 54.7),
+  Lower = c(80.5, 86.4, 81.0, 84.3, 85.2, 72.3, 65.3, 
+            66.9, 69.7, 67.0, 69.1, 65.7, 50.8, 50.0),
+  Upper = c(88.9, 90.3, 91.2, 95.7, 93.2, 76.9, 70.1, 
+            76.8, 81.3, 82.5, 85.3, 80.2, 62.6, 59.0),
+  ci = rep(0.95, 14)
+)
+
+# Visualization with error bars
+new_fig_COVID_B <- ggplot(data, aes(x = as.factor(wkday), y = Mean, group = Year, color = Year)) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin = Lower, ymax = Upper), width = 0.2, size = 0.8) +
+  scale_color_manual(values = c("2019" = "#0072B2", "2020" = "#D55E00")) +
+  scale_x_discrete(breaks=1:7, labels = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")) +
+  labs(
+    #title = "Daily CO2 Emissions During COVID-19 Lockdown",
+    #subtitle = "Comparison of Mean Values with 95% Confidence Intervals (2019 vs. 2020)",
+    x = "Weekday",
+    y = expression("Daily tCO"[2] * " emissions"),
+    y = "Daily CO2 Emissions (tCO2 per day)",
+    color = "Year"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5),
+    plot.subtitle = element_text(size = 14, hjust = 0.5),
+    axis.title = element_text(size = 16),
+    axis.text = element_text(size = 16),
+    legend.title = element_text(size = 16),
+    legend.text = element_text(size = 16),
+    legend.position = "top"
+  )
+
+
+fig_COVID_final <- cowplot::plot_grid(new_fig_COVID, new_fig_COVID_B, labels = c("A)", "B)"), ncol = 1)
+
+
+ggsave("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/new_figure_COVID_final.png",
+       fig_COVID_final, width = 9, height = 11, dpi = 600)
+
+
+# Plot the data
+ggplot(data_2020, aes(x = date)) +
+  geom_line(aes(y = tCO2_all), color = "red", size = 1, label = "2020") +
+  geom_ribbon(aes(ymin = Mean_CO2 - 2 * SD_CO2, ymax = Mean_CO2 + 2 * SD_CO2),
+              fill = "blue", alpha = 0.2) +
+  geom_line(aes(y = Mean_CO2), color = "blue", linetype = "dashed") +
+  labs(
+    title = "CO2 Emissions: COVID-19 Year vs. Baseline",
+    x = "Day of Year",
+    y = "CO2 Emissions (tCO2)",
+    caption = "Baseline: 2015–2019 (Mean ± 2 SD); COVID-19 Year: 2020"
+  ) +
+  theme_minimal()
+
+
+
+
+# data_all_daily_2020 %>% 
+#   #filter(tCO2_all < 150) %>%
+#   timePlot(pollutant = c("tCO2_all"), 
+#            name.pol = c("PC+HDT"),
+#            auto.text = TRUE, cols = c("#4a8bad", "#ffa500"),
+#            fontsize = 16, lwd = 2, lty = 1,
+#            ylab = expression("CO"[2] * " emissions (tons/day)"))
+# 
+
+# fig_6 <- inner_join(data_PC_month, data_HDT_month)
+# 
+# fig_data <- data_all %>% #filter(category == "sampled") %>%
+#   timeAverage(avg.time = "month", statistic = "mean", type = "category")
+# 
+# data_all_daily %>% filter(tCO2_all < 150) %>% 
+#   timePlot(pollutant = c("tCO2_all"), group = TRUE,
+#                      name.pol = c("PC+HDT"),
+#                      auto.text = TRUE, cols = c("#4a8bad", "#ffa500"),
+#                      fontsize = 16, lwd = 2, lty = 1,
+#                      ylab = expression("CO"[2] * " emissions (tons/day)"))
+# 
+# new_fig5 <- data_all_daily %>% filter(tCO2_all < 150) %>% filter(tCO2_all>30) %>% 
+#   ggplot(aes(x = date)) +
+#   geom_bar(aes(y = tCO2_PC/1000, fill = "(PC+HDT)"), stat = "identity") +
+#   #geom_bar(aes(y = tCO2_HDT/1000, fill = "(PC+HDT)"), stat = "identity") +
+#   scale_fill_manual(values = c("(PC+HDT)" = "#0072B2")) +
+#   scale_y_continuous(expand = c(0,0), limits = c(0, 200)) +
+#   scale_x_datetime(date_labels = "%Y", date_breaks = "1 year", 
+#                    expand = c(0,0), guide = ggplot2::guide_axis(check.overlap = TRUE)) +
+#   labs(title = "",
+#        x = "",
+#        y = expression("CO"[2] * " emissions (x1000 tons/year)"),
+#        fill = "Vehicle type") +
+#   theme_ggdist()+
+#   theme(legend.title = element_blank(),
+#         legend.text = element_text(face = "bold", size = 16),
+#         axis.title = element_text(face = "bold", size = 20),
+#         axis.text = element_text(size = 20),
+#         plot.title = element_text(face = "bold", hjust = 0.5))
+# 
+# ggsave("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/.png",
+#        new_fig5, width = 10, height = 7, dpi = 600)
+# 
+# data_all_annual %>% 
+#   selectByDate(year = 2020:2022) %>% 
+#   summary()
+
+data_all_daily %>% 
+  #filter(tCO2_all < 150, tCO2_all > 30) %>%
+  timePlot(pollutant ="tCO2_all", smooth = TRUE, avg.time = "week",
+           col = "#0072B2", fontsize = 20, lwd = 2, lty = 1,
+              ylab = expression("CO"[2] * " emissions (tons/week)"))
+new_fig5 <- 
+  data_all_daily %>%
+  filter(tCO2_all < 150, tCO2_all > 30) %>%
+  ggplot(aes(x = date)) +
+  
+  # Plot the CO2 emissions line
+  geom_line(aes(y = tCO2_all), color = "#0072B2") +  # Set color manually for clarity
+  
+  # Define Y axis limits and X axis date format
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 120)) +
+  scale_x_datetime(
+    date_labels = "%y %b", 
+    date_breaks = "3 month", 
+    expand = c(0, 0), 
+    guide = ggplot2::guide_axis(check.overlap = TRUE)
+  ) +
+  
+  # Add annotation for lockdown
+  geom_vline(xintercept = as.POSIXct("2020-03-29"), linetype = "dashed", color = "black", size = 1) +  # Lockdown line
+  annotate("text", x = as.POSIXct("2020-03-29"), y = 70, label = "COVID-19 Lockdown", 
+           color = "black", angle = 90, vjust = -0.5, hjust = 1.5, size = 5) +  # Text annotation
+  
+  # Labels
+  labs(
+    title = "",
+    x = "",
+    y = expression("CO"[2] * " emissions (tons/day)"),
+    fill = "Vehicle type"
+  ) +
+  
+  # Themes and aesthetics
+  theme_ggdist() +
+  theme(
+    legend.title = element_blank(),
+    legend.text = element_text(face = "bold", size = 16),
+    axis.title = element_text(face = "bold", size = 20),
+    axis.text.y = element_text(size = 18),
+    axis.text.x = element_text(size = 16, angle = 90),
+    plot.title = element_text(face = "bold", hjust = 0.5)
+  )
+
+# Display the plot
+print(new_fig5)
+
+ggsave("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/new_figure5_2020.png",
+       new_fig5, width = 14, height = 7, dpi = 600)
+
+
+# Preparation data --------------------------------------------------------
+#PC
+data_PC_pre <- data_PC
+data_PC_pre$date <- as.POSIXct(anytime::utctime(data_PC_pre$date), format="%Y-%m-%d")
+#data_PC_pre$date <- lubridate::as_date(data_PC_pre$date)
+#data_PC_pre <- selectByDate(data_PC_pre, year = 2015:2022)
+data_PC_pre <- openair::timeAverage(data_PC_pre%>% select(date, CO2_PC_gkm), avg.time = "day", statistic = "sum") %>% 
+  mutate(tCO2_PC = CO2_PC_gkm/1000/1000) #
+
+data_PC_street <- data_PC_pre %>% 
+  filter(CO2_PC_gkm > 0) %>% 
+  inner_join(roads, by = "osm_id") %>%
+  filter(name %in% c("AVUS","Straße des 17. Juni"))
+
+
+#HDT
+data_HDT <- readRDS("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/daily_HDT_2019_2020.rds")
+data_HDT_pre <- data_HDT
+data_HDT_pre$date <- as.POSIXct(anytime::utctime(data_HDT_pre$date), format="%Y-%m-%d")
+data_HDT_pre <- openair::timeAverage(data_HDT_pre %>% select(date,CO2_HDT_gkm), avg.time = "day", statistic = "sum") %>% 
+  mutate(tCO2_HDT = CO2_HDT_gkm/1000/1000) #conver
+saveRDS(data_HDT_pre, "/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/daily_HDT_2015_2022.rds")
+
+# Calculate daily values at city-level ------------------------------------
+data_PC_city <- openair::timeAverage(data_PC_pre %>% select(date, tCO2_PC), 
+                                     avg.time = "day", statistic = "sum") #%>% mutate(tCO2_PC = CO2_PC_gkm/1000/1000) #
+data_PC_city %>%   timePlot(pollutant = "tCO2_PC")
+
+# Comparison with CM-cities --------------------------------------------------------------
+
+data_PC_comp <- data_PC_pre %>%
+  mutate(ktCO2_PC = tCO2_PC/1000)
+  
+saveRDS(data_PC_comp, "/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/daily_PC_comparison_2019_2020.rds")
+data_PC_comp <- readRDS( "/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/daily_PC_comparison_2019_2020.rds")
+
+data_HDT_comp <- data_HDT_pre %>%
+  mutate(ktCO2_HDT = tCO2_HDT/1000)
+
+saveRDS(data_HDT_comp, "/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/daily_HDT_comparison_2019_2020.rds")
+data_HDT_comp <- readRDS("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/daily_HDT_comparison_2019_2020.rds")
+
+
+#Merge
+daily_model <- inner_join(data_PC_comp, data_HDT_comp, by="date") %>% 
+  mutate(ML_model = ktCO2_PC + ktCO2_HDT)
+
+monitor_df <- fread("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/CarbonProject/carbonmonitor-cities_datas_2022-09-11.csv") %>%
+  filter(city == "Berlin", sector == "Ground Transport") %>% as_tibble()
+monitor_df$date <- as.POSIXct(anytime::utctime(monitor_df$timestamp), format="%Y-%m-%d")
+monitor_df <- openair::timeAverage(monitor_df, avg.time = "day")
+openair::timePlot(monitor_df,
+                  pollutant = c("value"),
+                  smooth = TRUE, cols = "viridis",
+                  date.format = "%b-%Y",
+                  fontsize = 12, lwd = c(1), lty = 1,
+                  main = "Berlin - Ground Transport ktCO2")
+
+# identify and remove outliers using the filter() function and a logical condition
+Q1 <- quantile(daily_model$ML_model, .5) #outliers
+Q3 <- quantile(daily_model$ML_model, .95)
+IQR <- IQR(daily_model$ML_model)
+
+Carbon_TCO2 <- daily_model %>%
+  subset(daily_model$ML_model > (Q1 - 1.5*IQR) & daily_model$ML_model < (Q3 + 1.5*IQR))
+
+
+Carbon_TCO2 <- inner_join(Carbon_TCO2, monitor_df, by= "date") %>%
+  rename(CM_cities = value) %>%
+  mutate(rel.change = 100 * (ML_model- CM_cities)/ CM_cities,
+         abs.change = ML_model - CM_cities)
+
+
+saveRDS(Carbon_TCO2, "/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/comp_ML_cities2.rds")
+Carbon_TCO2 <- fread("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/comp_ML_cities.csv")
+
+comp_metrics <- Carbon_TCO2 %>%
+  select(date, ML_model, CM_cities) %>% 
+  group_by(date) %>% 
+  summarise(RD = round((ML_model - CM_cities)/mean(ML_model, CM_cities)*100, digits = 2),
+            AD = ML_model - CM_cities)
+
+summary(comp_metrics)
+
+calculate_confidence_interval <- function(data, column_name) {
+  # Calcular a média e o desvio padrão
+  mean_value <- mean(data[[column_name]])
+  sd_value <- sd(data[[column_name]])
+  
+  # Calcular o tamanho da amostra
+  n <- length(data[[column_name]])
+  
+  # Calcular o erro padrão da média
+  sem <- sd_value / sqrt(n)
+  
+  # Calcular o intervalo de confiança de 95%
+  lower_bound <- mean_value - qt(0.975, df = n-1) * sem
+  upper_bound <- mean_value + qt(0.975, df = n-1) * sem
+  
+  # Retornar o intervalo de confiança
+  return(c(lower_bound, upper_bound))
+}
+
+# Utilizar a função para calcular o intervalo de confiança para a coluna 'ML_model'
+confidence_interval <- calculate_confidence_interval(comp_metrics, "RD")
+confidence_interval
+
+png("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/comparison_model.png", width = 12, height = 6, units = "in", res = 600)
+Carbon_TCO2 %>% selectByDate(year=2019) %>% 
+  openair::timePlot(
+    pollutant = c("CM_cities", "ML_model"), group=TRUE,
+    cols = c("dodgerblue", "firebrick"), 
+    #smooth = TRUE, 
+    date.format = "%b-%Y", 
+    fontsize = 16, lwd = c(2, 2), lty = 1,
+    ylab = "Daily emissions [tCO2 x1000]",
+    main = "")
+dev.off()
+
+
+png("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/comparison_model_corr.png", width = 9, height = 6, units = "in", res = 600)
+Carbon_TCO2 %>% selectByDate(year=2019) %>% 
+  scatterPlot(y = "CM_cities", x = "ML_model",
+              pch = 21:22, cex = 0.2, linear = TRUE, plot.type = "p",
+              fill = c("#4a8bad"),
+              fontsize = 22,
+              col = "#4a8bad", ylim=c(2, 6),
+              xlab = "ML_model",
+              ylab = "CM_cities")
+dev.off()
+
+# png("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/traffic_flow_year2.png", width = 9, height = 6, units = "in", res = 600)
+# norm_traffic<- #traffic %>% bind_rows(traffic2) %>% 
+#   daily_2015_2023 %>% 
+#   selectByDate(year=2015:2023) %>% 
+#   timePlot(pollutant = c("cars", "cars_hdt"), group = TRUE,
+#          name.pol = c("PC", "HDT"),
+#          avg.time = "year", normalise = "1/1/2015", 
+#          key = TRUE, cols = "jet",
+#          fontsize = 20, lwd = 3, lty = 1,
+#          par.settings = list(panel.background = list(col = "white")),
+#          ylab = "Normalised yearly traffic flow [%]")
+# dev.off()
+# 
+# norm_traffic$data
+
+
+
+# Mapa  -------------------------------------------------------------------
+
+data_PC <- readRDS("/Users/co2map/Documents/traffic_2019/201922_hourly_PC.rds")
+data_PC_daily <- openair::timeAverage(data_PC %>% select(date, osm_id, CO2_PC_gkm), 
+                                      avg.time = "day", statistic = "sum", type = "osm_id")
+street <- terra::rast("/Users/co2map/Documents/StreetType DLR 1m/Berlin_street_type_1m_DLR.nc")
+iNetRoad <- st_read("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/CO2-traffic-emissions/shps/iNetroad_ber.gpkg") 
+grid_poly <- readRDS("/Users/co2map/Documents/CO2CityMap/Berlin/Components/grid_30m_road_ber.rds") %>% 
+  st_transform(4326)
+veg <- terra::rast("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Vegetation/data/veg_frac_30m_ber.TIF")
+
+roads <- st_read("/Users/co2map/Documents/Berlim_CO2map/data/shps/road_osm_feat.shp")
+roads <- bind_rows(road_nonsampled, road_sampled)
+
+#Re-project and make a grid 
+lcz_box <- sf::st_transform(iNetRoad, crs = terra::crs(street))
+# Create a bounding box with a specified resolution
+ras_resolution <- sf::st_bbox(lcz_box) %>% stars::st_as_stars(dx = 30)
+ras_resolution <- terra::rast(ras_resolution)
+ras_resolution <- raster::raster(ras_resolution)
+
+ras_resolution <- terra::project(ras_resolution, "EPSG:25833")
+ras_resample <- terra::resample(street, veg)
+ras_grid <- stars::st_as_stars(ras_resample, dimensions = "XY")
+shp_grid <- st_as_sf(ras_grid) %>% 
+  st_transform(4326)
+
+qtm(ras_resample)
+
+grid_poly <- st_join(grid_poly, shp_grid)
+
+#grid_point <- st_point(grid_poly)
+
+
+summary(data_PC$CO2_PC_gkm)
+
+CO2_net <- data_PC_daily %>% 
+  #selectByDate(year = 2018, month = 7) %>%
+  filter(CO2_PC_gkm > 0) %>% 
+  inner_join(roads, by = "osm_id") %>% 
+  #filter(fclass %in% c("motorway", "motorway_link")) %>%
+  select(osm_id, date, name, fclass, CO2_PC_gkm, geometry) %>%
+  st_as_sf()
+
+CO2_street <- CO2_net %>% 
+  group_by(name) %>% 
+  summarise(tCO2_km = sum(CO2_PC_gkm/1000/1000),
+            geometry = st_combine(geometry))
+
+CO2_int <- st_join(grid_poly, CO2_street) %>% 
+  mutate(values = ifelse(is.na(values.x), 1, values.x),
+         CO2_m = tCO2_km/1000,
+         kgCO2_m2 = CO2_m*values*1000)
+
+CO2_int <- st_read("/Users/co2map/Documents/20220202.gpkg")
+veris1 <- viridis::inferno(250, direction = -1)
+
+library(tmap)
+area <- st_read("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Vegetation/data/area_berlin.shp") %>% 
+  st_transform(4326)
+google <- readRDS("/Users/co2map/Documents/CO2CityMap/Berlin/Components/berlin_google_terrain.rds")
+
+# Improved map visualization
+tmap_mode("plot")
+CO2_int %>% 
+  tm_shape() +
+  tm_polygons("kgCO2_m2",
+           palette = veris1,
+           n = 10,
+           style = "kmeans",
+           lwd = 0,
+           title.col = expression("CO"[2] * " ("*"kg m" ^-2 * " d" ^-1 *")")) +
+  tm_layout(legend.show = TRUE) +
+  qtm(area, fill = NULL, borders = "gray60")+
+  tm_layout(
+    #title = "Daily Traffic CO2 Emissions in Berlin (2019-2020)",
+    title.color = "#3f1651",
+    #panel.show = FALSE,
+    title.size = 1.5,
+    bg.color = "transparent",
+    frame = FALSE,
+    legend.show = TRUE,
+    legend.outside = TRUE,
+    legend.title.size = 1,
+    legend.text.size = 0.8,
+    legend.position = c("left", "bottom"),
+    legend.bg.color = "white",
+    legend.bg.alpha = 0.5
+  ) +
+  tm_scale_bar(
+    position = c("center", "bottom"), 
+    lwd = 1, 
+    color.dark = "black", 
+    color.light = "white", 
+    text.size = 0.5
+  ) +
+  # tm_credits(
+  #   "©2022 Max Anjos, ZoomCityCO2model https://github.com/ByMaxAnjos, OpenStreetMap® contributions, 2024",
+  #   size = 0.8, 
+  #   position = c("left", "bottom"), 
+  #   col = "#3f1651"
+  # ) +
+  tm_compass(
+    type = "arrow", 
+    position = c("right", "top"), 
+    show.labels = 1
+  )
+
+
+CO2_inters <- st_intersection(grid_poly, CO2_net, extensive = TRUE) %>% 
+  mutate(CO2_PC_gkm = CO2_PC_gkm * values,
+    kgCO2_m2 = round(CO2_PC_gkm/1000, digits = 0))
+
+#convert raster resample to point
+street_poi <- terra::as.points(street) %>% 
+  st_as_sf()
+
+# Spatial join to associate points with polygons
+joined_data <- terra::aggregate(street_poi, grid_poly, sum) %>% 
+  mutate(area_km2 = Band1/1000)
+
+st_write(CO2_inters, "/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/20180218.gpkg")
+
+# Define breaks for discretization
+class <- classInt::classIntervals(CO2_int[["kgCO2_m2"]], 9, style="kmeans")
+breaks <- as.numeric(round(c(class$brks), digits = 0))
+# Create a factor variable based on CO2_sum
+
+CO2_int$CO2_group <- cut(CO2_int$kgCO2_m2, breaks = breaks, dig.lab = 4)
+
+colcode <-  viridis::inferno(9, direction = -1)
+colcode <- MetBrewer::met.brewer(name = "Greek", 10, direction = -1)
+
+
+# Plot CO2 map
+ggplot() +
+  # geom_sf(data = rj_state, color = NA, fill = "#efeeec") +
+  geom_sf(data = area, fill = NA, color = "gray60", size = 0.3, inherit.aes = FALSE) +
+  geom_sf(data = CO2_int, aes(fill =CO2_group), color="transparent", alpha = 0.8, inherit.aes = FALSE) +
+  scale_fill_manual(values = colcode, 
+                    breaks = unique(CO2_int$CO2_group),
+                    name = "") +
+  coord_sf(expand = FALSE) +
+  ggspatial::annotation_scale() +
+  ggspatial::annotation_north_arrow(which_north = "true",
+                                    location="br") +
+  labs(title = "CO2 emissions from road traffic in Berlin",
+       subtitle = "01.09.2019 at 08:00h",
+       fill = expression("CO"[2] * " ("*"kg m" ^-2 * " h" ^-1 *")"),
+       x = NULL, y = NULL) +
+  guides(color  = guide_colorbar(barheight = unit(3, units = "mm"),
+                                 barwidth = unit(230, units = "mm"),
+                                 direction = "horizontal",
+                                 ticks.colour = "white",
+                                 title.position = "top",
+                                 title.hjust = 0.5)) +
+  theme(legend.position = "bottom",
+        plot.title = element_text(size = 18, color = "#183170", hjust = 0.5, face = "bold"),
+        plot.subtitle = element_text(color = "#183170", size = 12, hjust = 0.5),
+        #plot.subtitle = element_text(family = "oswald", color = "white", face = "bold",size = 18),
+        panel.grid.major = element_blank(),
+        #plot.background = element_rect(fill = "grey20", color = NA),
+        panel.background = element_rect(fill = "grey20", color = NA),
+        legend.background = element_rect(fill=NA),
+        #plot.background = element_rect(color = "#F5EFFA"),
+        panel.grid = element_blank(),
+        legend.text = element_text(size = 15, color = "#183170"),
+        legend.title = element_text(size = 16, face = "bold",
+                                    color = "#183170"),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.text.x = element_blank())
+  
+
+
+ggmap(google) +
+  geom_sf(data=my_box, fill='transparent', inherit.aes = FALSE) +
+  geom_sf(data=my_box, fill='transparent', inherit.aes = FALSE) +
+  scale_color_viridis_c(option = "inferno") +
+  ggspatial::annotation_scale(bar_cols = c("grey40", "grey80"), colour = "white")+
+  ggspatial::annotation_north_arrow(location = "br", which_north = "true",
+                                    height = unit(1.0, "cm"),
+                                    width = unit(1.0, "cm"))+
+  coord_sf(expand = FALSE)+
+  labs(title = "CO2 emissions from road traffic in Berlin",
+       subtitle = "01.09.2019 at 08:00h",
+       fill = expression("CO"[2] * " ("*"g m" ^-2 * " s" ^-1 *")"),
+       x = NULL, y = NULL) +
+  guides(color  = guide_colorbar(barheight = unit(3, units = "mm"),
+                                 barwidth = unit(230, units = "mm"),
+                                 direction = "horizontal",
+                                 ticks.colour = "white",
+                                 title.position = "top",
+                                 title.hjust = 0.5)) +
+  theme(legend.position = "bottom",
+        plot.title = element_text(family = "oswald", size = 18, color = "#183170", hjust = 0.5, face = "bold"),
+        plot.subtitle = element_text(family = "oswald", color = "#183170", size = 12, hjust = 0.5),
+        #plot.subtitle = element_text(family = "oswald", color = "white", face = "bold",size = 18),
+        panel.grid.major = element_blank(),
+        #plot.background = element_rect(fill = "grey20", color = NA),
+        panel.background = element_rect(fill = "grey20", color = NA),
+        legend.background = element_rect(fill=NA),
+        #plot.background = element_rect(color = "#F5EFFA"),
+        panel.grid = element_blank(),
+        legend.text = element_text(family = "oswald", size = 15, color = "#183170"),
+        legend.title = element_text(size = 16, face = "bold",
+                                    family = "Fira Sans",
+                                    color = "#183170"),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.text.x = element_blank())
+
+
+# Temporal variation ------------------------------------------------------
+
+AVUS <- data_PC_street %>% 
+  dplyr::filter(osm_id == "106310123") %>% 
+  mutate(kgCO2_km = CO2_PC_gkm/1000)
+
+AVUS <- readRDS("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/AVUS.rds")
+
+AVUS <- AVUS %>% 
+  mutate(year=lubridate::year(date)) %>% 
+  filter(year %in% c(2015:2020))
+
+png("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/AVUS_2.png", width = 9, height = 6, units = "in", res = 600)
+AVUS %>% 
+  timePlot(pollutant = c("kgCO2_km"),
+         name.pol = c("PC"),
+         key = TRUE, cols = "jet", plot.type = "l",
+         fontsize = 20, lwd = 1.5, lty = 1, ylim = c(0, 50),
+         par.settings = list(panel.background = list(col = "white")),
+         ylab =expression("CO"[2] * " ("*"kg km" ^-1 * " d" ^-1 *")"),
+         main = "")
+dev.off()
+
+Jun17 <- data_PC_street %>% 
+  dplyr::filter(osm_id == "320896581") %>% 
+  mutate(kgCO2_km = CO2_PC_gkm/1000)
+
+Jun17 <- readRDS("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/Jun17.rds")
+
+Jun17 <- Jun17 %>% 
+  mutate(year=lubridate::year(date)) %>% 
+  filter(year %in% c(2015:2020))
+
+
+png("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/Jun17_2.png", width = 9, height = 6, units = "in", res = 600)
+Jun17 %>% 
+  timePlot(pollutant = c("kgCO2_km"),
+           name.pol = c("PC"),
+           key = TRUE, cols = "jet", 
+           fontsize = 20, lwd = 1.5, lty = 1, ylim = c(0, 50),
+           par.settings = list(panel.background = list(col = "white")),
+           ylab =expression("CO"[2] * " ("*"kg km" ^-1 * " d" ^-1 *")"),
+           main = "")
+dev.off()
+
+hour_PC <- data_PC_pre %>%
+  select(date, CO2_PC_gkm) %>%
+  openair::timeAverage(avg.time = "hour", statistic = "sum") %>% 
+  mutate(CtCO2_PC = CO2_PC_gkm/1000/1000)
+
+hour_HDT <- data_HDT_pre %>%
+  select(date, CO2_HDT_gkm) %>%
+  openair::timeAverage(avg.time = "hour", statistic = "sum") %>% 
+  mutate(CtCO2_HDT = CO2_HDT_gkm/1000/1000)
+
+hour_df <- inner_join(hour_PC, hour_HDT, by = "date")
+
+# PC ----------------------------------------------------------------------
+
+data_PC_pre <- readRDS("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/daily_PC_2015_2022.rds")
+
+
+df_plot <- data_PC_pre %>% 
+  #select(date, ML_model, CO2_PC_gkm, CO2_HDV_gkm) %>% 
+  mutate(tCO2 = tCO2_PC,
+         year= lubridate::year(date),
+         FID = row_number())
+
+summary(df_plot$tCO2)
+
+bg_color <- "grey97"
+
+fig_dis_PC <- df_plot %>% 
+  ggplot(aes(as.factor(year), tCO2)) +
+  stat_halfeye(fill_type = "segments", point_interval = "mean_qi", alpha = 0.3) +
+  stat_interval() +
+  stat_summary(geom = "point", fun = mean, size=3) +
+  # Annotate the average number of cumulative
+  annotate("richtext", x =8.7, y = 0, label = "Cumulative<br>emissions<br>by year",
+           fill = NA, label.size = 0, size = 4.1, hjust = 0.5) +
+  # annotate(
+  #   "richtext",
+  #   x = c(6.8, 6.8, 6.8, 8.5),
+  #   y = c(2200,  3000, 3700, 2400),
+  #   label = c("50 % of emissions<br>fall within this range", "95 %<br>of emissions",
+  #             "80 %<br>of emissions", "Median"),
+  #   fill = NA, label.size = 0, size = 4, vjust = 1,
+  # ) +
+  # geom_curve(
+  #   data = data.frame(
+  #     x = c(0.7, 0.80, 0.80, 1.225, 1.8),
+#     xend = c(0.95, 0.95, 0.95, 1.075, 1.8), 
+#     y = c(1800, 5000, 3000, 2300, 3800),
+#     yend = c(1800, 5000, 3000, 2100, 2500)),
+#   aes(x = x, xend = xend, y = y, yend = yend),
+#   stat = "unique", curvature = 0.2, size = 0.2, color = "grey12",
+#   arrow = arrow(angle = 20, length = unit(1, "mm"))
+# )
+stat_summary(
+  aes(y = tCO2),
+  geom = "text",
+  fun.data = function(x) {
+    data.frame(
+      y = 100,
+      label = sprintf("(%s)", scales::number(sum(x), accuracy = 0.1)))}, 
+  size = 5, colour = "black",
+) +
+  scale_x_discrete(labels = toupper) +
+  #scale_y_continuous(breaks = seq(2500, 20000, 2500)) +
+  scale_color_manual(values = MetBrewer::met.brewer("Hokusai3")) +
+  guides(col = "none") +
+  #coord_flip(ylim = c(0, 7000), clip = "off") +
+  # remove default legend
+  guides(col = "none") +
+  labs(x = "", y = "Daily tCO2 emissions", title = "A) PC") +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.background = element_rect(color = NA, fill = bg_color),
+    panel.grid = element_blank(),
+    panel.grid.major.x = element_line(size = 0.1, color = "grey75"),
+    panel.grid.major.y = element_line(size = 0.1, color = "grey75"),
+    plot.title = element_text(family = "Arial", face = "bold"),
+    plot.title.position = "plot",
+    plot.subtitle = element_textbox_simple(
+      margin = margin(t = 4, b = 16), size = 10),
+    plot.caption = element_textbox_simple(
+      margin = margin(t = 12), size = 7),
+    plot.caption.position = "plot",
+    #move the axis text a bit into the panel
+    axis.text.x = element_text(hjust = 0, size = 14, face = "bold"),
+    axis.text.y = element_text(hjust = 0, size = 14),
+    plot.margin = margin(4, 4, 4, 4)
+  )
+
+legend_text <- 
+  tibble(
+    xt = c(0.65, 1.85, 6, 5),
+    yt = c(1.07, 1.07, 1.07, 0.95),
+    text = c("95%", "80%", "50%   of modelled emissions fall in this range", "Mean")
+  )
+
+legend.plot <- ggplot(data = tibble(x = 0:10, y = rep(1, 11)), aes(x, y)) + 
+  ggdist::stat_interval(.width = c(0.5, 0.8, 0.95), show.legend = F) +
+  annotate("point", x= 5, y=1)+
+  scale_color_manual(values = MetBrewer::met.brewer("Hokusai3")) +
+  #coord_cartesian(ylim = c(0.9, 1.1)) +
+  geom_text(data = legend_text, aes(xt, yt, label = text), size = 5) +
+  theme_void() 
+
+plot_ins_f <- cowplot::ggdraw(fig_dis_PC) +
+  cowplot::draw_plot(legend.plot, .275, .03, .525, .35)
+
+ggsave("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/distribution_PC.png",
+       plot_ins_f, width = 14, height = 8, dpi = 600)
+
+
+
+# HDT ---------------------------------------------------------------------
+
+
+df_plot_hdt <- data_HDT_pre %>% 
+  #select(date, ML_model, CO2_PC_gkm, CO2_HDV_gkm) %>% 
+  mutate(tCO2 = tCO2_HDT,
+         year= lubridate::year(date),
+         FID = row_number())
+
+summary(df_plot_hdt$tCO2)
+bg_color <- "grey97"
+
+fig_dis_HDT <- df_plot_hdt %>% 
+  ggplot(aes(as.factor(year), tCO2)) +
+  stat_halfeye(fill_type = "segments", alpha = 0.3) +
+  stat_interval() +
+  stat_summary(geom = "point", fun = mean, size=3) +
+  # Annotate the average number of cumulative
+  annotate("richtext", x =8.7, y = 0, label = "Cumulative<br>emissions<br>by year",
+           fill = NA, label.size = 0, size = 4.1, hjust = 0.5) +
+  # annotate(
+  #   "richtext",
+  #   x = c(6.8, 6.8, 6.8, 8.5),
+  #   y = c(2200,  3000, 3700, 2400),
+  #   label = c("50 % of emissions<br>fall within this range", "95 %<br>of emissions",
+  #             "80 %<br>of emissions", "Median"),
+  #   fill = NA, label.size = 0, size = 4, vjust = 1,
+  # ) +
+  # geom_curve(
+  #   data = data.frame(
+  #     x = c(0.7, 0.80, 0.80, 1.225, 1.8),
+  #     xend = c(0.95, 0.95, 0.95, 1.075, 1.8), 
+  #     y = c(1800, 5000, 3000, 2300, 3800),
+  #     yend = c(1800, 5000, 3000, 2100, 2500)),
+  #   aes(x = x, xend = xend, y = y, yend = yend),
+  #   stat = "unique", curvature = 0.2, size = 0.2, color = "grey12",
+  #   arrow = arrow(angle = 20, length = unit(1, "mm"))
+  # )
+  stat_summary(
+    aes(y = tCO2),
+    geom = "text",
+    fun.data = function(x) {
+      data.frame(
+        y = 0,
+        label = sprintf("(%s)", scales::number(sum(x), accuracy = 0.1)))}, 
+    size = 5, colour = "black",
+  )+
+  scale_x_discrete(labels = toupper) +
+  #scale_y_continuous(breaks = seq(2500, 20000, 2500)) +
+  scale_color_manual(values = MetBrewer::met.brewer("NewKingdom")) +
+  guides(col = "none") +
+  #coord_flip(ylim = c(0, 7000), clip = "off") +
+  # remove default legend
+  guides(col = "none") +
+  labs(x = "", y = "Daily tCO2 emissions", title = "B) HDT") +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.background = element_rect(color = NA, fill = bg_color),
+    panel.grid = element_blank(),
+    panel.grid.major.x = element_line(size = 0.1, color = "grey75"),
+    panel.grid.major.y = element_line(size = 0.1, color = "grey75"),
+    plot.title = element_text(family = "Arial", face = "bold"),
+    plot.title.position = "plot",
+   plot.subtitle = element_textbox_simple(
+   margin = margin(t = 4, b = 16), size = 10),
+   plot.caption = element_textbox_simple(
+   margin = margin(t = 12), size = 7),
+   plot.caption.position = "plot",
+   #move the axis text a bit into the panel
+    axis.text.x = element_text(hjust = 0, size = 14, face = "bold"),
+    axis.text.y = element_text(hjust = 0, size = 14),
+    plot.margin = margin(4, 4, 4, 4)
+  )
+
+legend_text <- 
+  tibble(
+    xt = c(0.65, 1.85, 6, 5),
+    yt = c(1.07, 1.07, 1.07, 0.95),
+    text = c("95%", "80%", "50%   of modelled emissions fall in this range", "Mean")
+  )
+
+legend.plot <- ggplot(data = tibble(x = 0:10, y = rep(1, 11)), aes(x, y)) + 
+  ggdist::stat_interval(.width = c(0.5, 0.8, 0.95), show.legend = F) +
+  annotate("point", x= 5, y=1)+
+  scale_color_manual(values = MetBrewer::met.brewer("NewKingdom")) +
+  #coord_cartesian(ylim = c(0.9, 1.1)) +
+  geom_text(data = legend_text, aes(xt, yt, label = text), size = 5) +
+  theme_void()
+
+plot_ins_hdt <- cowplot::ggdraw(fig_dis_HDT) +
+  #cowplot::draw_plot(legend.plot, .275, .03, .525, .35)
+  cowplot::draw_plot(legend.plot, .275, .7, .525, .35)
+
+ggsave("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/distribution_HDT.png",
+       plot_ins_hdt, width = 14, height = 8, dpi = 600)
+
+
+# FIGURE 5 ----------------------------------------------------------------
+
+df_fig <- fread("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/articleML/figure5_data.csv")
+# Create a barplot with customized colors and legend using ggtext
+library(showtext)
+library(glue)
+
+new_fig5 <- ggplot(df_fig, aes(x = as.factor(Year))) +
+  geom_bar(aes(y = PC/1000, fill = "PC"), stat = "identity", width = 0.4) +
+  geom_bar(aes(y = HDT/1000, fill = "HDT"), stat = "identity", width = 0.4) +
+  scale_fill_manual(values = c("PC" = "#0072B2", "HDT" = "#D55E00")) +
+  ylim(0,1000)+
+  labs(title = "",
+       x = "",
+       y = expression("CO"[2] * " emissions (x1000 tons)"),
+       fill = "Vehicle type") +
+  theme_ggdist()+
+  theme(legend.title = element_blank(),
+        legend.text = element_text(face = "bold", size = 16),
+        axis.title = element_text(face = "bold", size = 20),
+        axis.text = element_text(size = 20),
+        plot.title = element_text(face = "bold", hjust = 0.5))
+
+ggsave("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/new_figure5.png",
+       new_fig5, width = 10, height = 7, dpi = 600)
+
+
+# Figure 5 new ------------------------------------------------------------
+
+df_fig <- inner_join(data_PC_month, data_HDT_month) %>% 
+  rename(PC = tCO2_PC, HDT = tCO2_HDT) %>% select(date, PC, HDT) %>% 
+  mutate(date = as.Date(date))
+
+new_fig5 <- ggplot(df_fig, aes(x = date)) +
+  geom_bar(aes(y = PC, fill = "PC"), stat = "identity") +
+  geom_bar(aes(y = HDT, fill = "HDT"), stat = "identity") +
+  scale_fill_manual(values = c("PC" = "#0072B2", "HDT" = "#D55E00")) +
+  scale_y_continuous(expand = c(0,0), limits = c(0,100000))+
+  scale_x_date(date_labels = "%y %b", date_breaks = "1 month", 
+                   expand = c(0,0), guide = ggplot2::guide_axis(check.overlap = TRUE)) +
+  labs(title = "",
+       x = "",
+       y = expression("CO"[2] * " emissions (tons)"),
+       fill = "Vehicle type") +
+  theme_ggdist()+
+  theme(legend.title = element_blank(),
+        legend.text = element_text(face = "bold", size = 16),
+        axis.title = element_text(face = "bold", size = 20),
+        axis.text.y = element_text(size = 18),
+        axis.text.x = element_text(size = 16, angle = 90),
+        plot.title = element_text(face = "bold", hjust = 0.5)) 
+
+  geom_text(aes(x = as.Date('2020-01-01'),y=90000,
+                label = "First Wave\nCOVID-19\n(January 27, 2020)")) +
+  geom_vline(xintercept = as.Date('2020-02-01', '%Y-%m-%d'),
+             yintercept = 75000,
+             lty='dashed', color = "gray20")
+
+ggsave("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/new_figure5.png",
+       new_fig5, width = 14, height = 7, dpi = 600)
+
+
+
+# Figure 4 ----------------------------------------------------------------
+
+#Traffic emissions
+df_fig_PC <- list.files(path = "/Users/co2map/Documents/traffic_2019/",     # Identify all csv files in folder
+                   pattern = "*.rds", full.names = TRUE) %>%
+  lapply(readRDS) %>%                                            # Open and store all files in list
+  bind_rows () %>%                                             # Combine data sets into one data.frame
+  setkey(date)
+
+df_fig_PC <- df_fig_PC %>%
+  select(date, CO2_PC_gkm) %>%
+  openair::timeAverage(avg.time = "hour", statistic = "sum") %>% 
+  mutate(CtCO2_PC = CO2_PC_gkm/1000/1000)
+
+df_fig_HDT <- list.files(path = "/Users/co2map/Documents/traffic_HDT_2019/",     # Identify all csv files in folder
+                        pattern = "*.rds", full.names = TRUE) %>%
+  lapply(readRDS) %>%                                            # Open and store all files in list
+  bind_rows () %>%                                             # Combine data sets into one data.frame
+  setkey(date)
+
+df_fig_HDT <- df_fig_HDT %>%
+  select(date, CO2_HDT_gkm) %>%
+  openair::timeAverage(avg.time = "hour", statistic = "sum") %>% 
+  mutate(CtCO2_HDT = CO2_HDT_gkm/1000/1000)
+
+df_fig4 <- inner_join(df_fig_PC, df_fig_HDT)
+
+saveRDS(df_fig4, "/Users/co2map/Documents/CO2variation_PC_HDT_2019.rds")
+
+png("/Users/co2map/Documents/CO2variation_PC_HDT.png", width = 14, height = 10, units = "in", res = 600)
+df_fig4 %>% 
+  timeVariation(pollutant = c("CtCO2_PC", "CtCO2_HDT"),
+                name.pol = c("PC", "HDT"),
+                cols = c("#AA9173FF", "#00BFFFFF"),
+                smooth=TRUE,
+                xlab = c("hour"),
+                fontsize = 18, lwd = 2, lty = 1, 
+                ylab = "tCO2 emissions",
+                main = "")
+dev.off()
+
+
+
+
+
+
+
+
+

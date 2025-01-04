@@ -1,0 +1,941 @@
+#=======================================================================================
+#
+# Title:       High Spatio-temporal Resolution of traffic CO2 emissions
+# Author:      Dr. Max Anjos (maxanjos@campus.ul.pt)
+# Description: Interpolation of air temperarure. More details on the approach are available at:
+#             https://github.com/ByMaxAnjos/CO2-traffic-emissions
+
+# data: 16.06.2023
+
+#=======================================================================================
+
+
+if (!require("pacman")) install.packages("pacman") # if the pacman package is not installed, install it
+pacman::p_load(lubridate, vip, tidyverse,  data.table, sf, openair, osmdata,
+               tmap, recipes, timetk, ranger, rmarkdown,
+               kernelshap, shapviz) # use pacman to load the following packages
+
+library(lubridate) # A package that makes it easier to work with dates and times in R.
+library(tidyverse) #A collection of packages for data manipulation and visualization, including dplyr, ggplot2, and tidyr
+library(data.table) #A package for fast and efficient data manipulation.
+library(sf) #A package for working with spatial data using the Simple Features (SF) standard.
+library(openair) #A package for air quality data analysis and visualization.
+library(osmdata) #A package for accessing and working with OpenStreetMap data.
+library(tmap) #A package for creating static and interactive maps in R.
+library(recipes) #A package for preprocessing data using a formula-based interface.
+library(timeDate) #A package for working with dates and times in R.
+library(timetk) #A package for manipulating time series data in R.
+library(ranger) #A package for building fast and accurate random forests models.
+library(tidymodels) #A package for training and evaluating machine learning models in R.
+library(kernelshap)
+library(shapviz)
+library(doParallel)
+setwd("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/CO2-traffic-emissions") #sets the working directory to the specified path
+source("R/ZCCM_functions.R") #runs the ZCCM_functions file, which contains all specific functions
+
+
+#======================================================================
+#
+#======================================================================
+
+stations_csv <- fread("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/CO2-traffic-emissions/data/counting_stations_berlin.csv", dec=",") #Read cvs counting stations.
+
+auto_stations <- sf::read_sf("/Users/co2map/Documents/auto_berlin/BER_traffic_stations.gpkg") %>%
+  dplyr::rename(id = DZ_Nr, geometry = geom) %>%
+  dplyr::mutate(id = as.factor(id)) %>%
+  select(id, geometry)
+
+prep_stations_data <- function(station.df = NULL, station.shp = NULL, id = "id") {
+
+
+  if(!is.null(station.df)) {
+
+    stations <- station.df %>%
+      janitor::clean_names() %>%
+      dplyr::rename(id = {{ id }}) %>%
+      dplyr::mutate(id = as.factor(id)) %>%
+      #distinct(longitude, latitude, .keep_all = TRUE) %>% #Eleminate duplicity
+      sf::st_as_sf(coords = c("longitude", "latitude"), crs=4326) #Convert stations csv file to shapefile based on column Latitude and Longitude.
+
+    return(stations)
+
+  } else {
+
+    stations <- station.shp %>%
+      janitor::clean_names() %>%
+      dplyr::rename(id = {{ id }}) %>%
+      dplyr::mutate(id = as.factor(id)) %>%
+      sf::st_as_sf() %>%
+      sf::st_transform(crs=4326)
+
+    return(stations)
+
+  }
+
+}
+
+my_stations <- prep_stations_data(station.df = stations_csv, id="id")
+
+weather <- fread("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/inputs/data/weather_berlin_2002_2023.csv") %>% dplyr::select(-V1)
+
+prep_weather <- function(data = weather,...) {
+
+  data <- data %>%
+    openair::selectByDate(...)
+  #openair::timeAverage(avg.time = time, ...)
+
+  impute_recipe <- recipes::recipe(date ~., data = data) %>%
+    recipes::step_impute_mean(all_numeric())
+
+  data <- impute_recipe %>%
+    recipes::prep(data) %>%
+    recipes::bake(data)
+
+  # Function to calculate the Wet Bulb Globe Temperature (WBGT) index
+  calculate_wbgt <- function(airT, HR, sunshine, ws) {
+    # Adjust air temperature for humidity
+    T_adj <- airT + 0.33 * HR / 100 * (airT - 14.4)
+
+    # Calculate the globe temperature
+    globeT <- (0.1 * airT + 0.9 * sunshine / 100 * 1200 + 100) / 1.1
+
+    # Calculate WBGT index
+    wbgt <- 0.7 * T_adj + 0.2 * globeT + 0.1 * airT
+
+    return(data.frame(wbgt_index = wbgt))
+  }
+
+  # Function to calculate the Heat Index
+  calculate_heat_index <- function(airT, HR) {
+    # Convert temperature to Fahrenheit
+    airT_fahrenheit <- (airT * 9/5) + 32
+
+    # Calculate the heat index
+    heat_index <- -42.379 + 2.04901523 * airT_fahrenheit + 10.14333127 * HR - 0.22475541 * airT_fahrenheit * HR - 0.00683783 * airT_fahrenheit^2 - 0.05481717 * HR^2 + 0.00122874 * airT_fahrenheit^2 * HR + 0.00085282 * airT_fahrenheit * HR^2 - 0.00000199 * airT_fahrenheit^2 * HR^2
+
+    return(data.frame(heat_index = heat_index))
+  }
+
+  # Function to calculate the THI (Temperature-Humidity Index)
+  calculate_thi <- function(airT, HR) {
+    # Calculate THI
+    #thi <- (1.8 * airT + 32) - (0.55 - 0.55 * HR) * (1.8 * airT + 32) - 58
+    thi <- airT - ((1 - HR / 100) * (airT - 14.4)) / 2
+    #airT + 0.36 * HR - 41.6
+
+    return(data.frame(thi_index = thi))
+  }
+
+  #Wind Chill Equivalent Temperature (WCET)
+  calculate_wcet <- function(airT, ws) {
+    # Convert wind speed to kilometers per hour
+    wind_speed_kph <- ws * 3.6
+
+    # Calculate wind chill temperature
+    wcet <- 13.12 + (0.6215 * airT) - (11.37 * wind_speed_kph^0.16) + (0.3965 * airT * wind_speed_kph^0.16)
+
+    return(data.frame(wcet_index = wcet))
+  }
+
+  # Function to calculate the Wind Chill Temperature Index
+  calculate_wind_chill <- function(airT, ws) {
+    # Convert wind speed to mph
+    ws_mph <- ws * 0.621371
+
+    # Calculate wind chill index
+    wind_chill <- 35.74 + 0.6215 * airT - 35.75 * ws_mph^0.16 + 0.4275 * airT * ws_mph^0.16
+
+    return(data.frame(wct_index = wind_chill))
+  }
+
+  # Function to calculate the Effective Temperature (ET)
+  calculate_effective_temperature <- function(airT, HR, ws) {
+    # Calculate ET
+    et <- 0.5 * (airT + 61.0 + ((airT - 68.0) * 1.2) + (HR * 0.094))
+
+    # Adjust for wind speed
+    et <- et + ((0.4 * ws) - 20)
+
+    return(data.frame(et_index = et))
+  }
+
+  # Calculate WBGT index
+  wbgt_index <- calculate_wbgt(data$airT, data$HR, data$sunshine, data$ws)
+
+  # Calculate Heat Index
+  heat_index <- calculate_heat_index(data$airT, data$HR)
+
+  # Calculate THI
+  thi_index <- calculate_thi(data$airT, data$HR)
+
+  # Wind Chill Equivalent Temperature (WCET)
+  wind_chill_wcet <- calculate_wcet(data$airT, data$ws)
+
+  # Calculate Wind Chill Index
+  wind_chill_temp_index <- calculate_wind_chill(data$airT, data$ws)
+
+  # Calculate Effective Temperature
+  effective_temperature <- calculate_effective_temperature(data$airT, data$HR, data$ws)
+
+  weather_res <- dplyr::bind_cols(data %>% select(date), wbgt_index, heat_index, thi_index,wind_chill_wcet, wind_chill_temp_index, effective_temperature)
+
+  return(weather_res)
+}
+my_weather <- prep_weather(data = weather)
+
+#Read road network ESRI shapefile from TomTom
+network_gis <- sf::read_sf("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/inputs/shps/network_berlin.shp") %>%
+  mutate(Id = as.factor(Id)) %>%
+  subset(FRC != "0") %>%
+  #subset(FRC != "6") %>%
+  #subset(FRC != "7") %>%
+  dplyr::select(StreetName, FRC, SpeedLimit, geometry) %>%
+  st_as_sf() %>%
+  st_transform(crs = 4326)
+
+# tmap_mode("view")
+# qtm(iNetRoad) + qtm(auto_stations, symbols.col = "red", symbols.size = 0.2) +
+#   qtm(my_stations, symbols.col = "blue", symbols.size = 0.2)
+
+#Read density population ESRI shapefile from Berlin Atlas
+pop_gis <- sf::read_sf("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/inputs/shps/pop_2020.shp") %>%
+  dplyr::select(ew2020, ew_ha_2020, geometry) %>%
+  rename(resident = ew2020, resident_hac = ew_ha_2020) %>%
+  st_as_sf() %>%
+  st_transform(crs = 4326)
+
+#Read land use ESRI shapefile from Berlin Atlas
+land_gis <- sf::read_sf("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/inputs/shps/uso_real_2020.shp") %>%
+  dplyr::select(woz, geometry) %>%
+  rename(landuseAtlas = woz) %>%
+  mutate(landuseAtlas = factor(landuseAtlas)) %>%
+  st_as_sf() %>%
+  st_transform(crs = 4326)
+
+land_gis %>% st_drop_geometry() %>%  count(land_gis$woz_name)
+#Read daily traffic ESRI shapefile from Berlin Atlas
+vtm_map19 <- sf::read_sf("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/inputs/shps/atlastraffic_ber_2019.shp") %>%
+  dplyr::select(dtvw_kfz, dtvw_lkw, geometry) %>%
+  st_as_sf() %>%
+  st_transform(crs = 4326)
+
+# Spatial operation -------------------------------------------------------
+
+#st_write(iNetRoad, "shps/iNetroad_ber.gpkg")
+iNetRoad <- st_read("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/CO2-traffic-emissions/shps/iNetroad_ber.gpkg")
+
+#Joined road OSM with network from the TomTom
+GIS_road <- st_join(iNetRoad, network_gis, join =st_nearest_feature, left = FALSE)
+GIS_road <- st_join(GIS_road, vtm_map19, st_nearest_feature, st_is_within_distance, dist = 0.1)
+GIS_road  <- st_join(GIS_road , pop_gis, st_nearest_feature, st_is_within_distance, dist = 0.1)
+GIS_road  <- st_join(GIS_road, land_gis, st_nearest_feature, st_is_within_distance, dist = 0.1)
+
+GIS_road2 <- st_drop_geometry(GIS_road)
+recipe_shp <- recipe(osm_id ~., data = GIS_road2) %>%
+  step_impute_mode(lanes, maxspeed, landuseAtlas)
+
+GIS_road <- recipe_shp %>%
+  prep(GIS_road2) %>%
+  bake(GIS_road2) %>%
+  #filter(fclass != "primary_link") %>%
+  inner_join(GIS_road %>% select(osm_id, geom), by = "osm_id") %>%
+  st_as_sf() %>%
+  st_transform(crs = 4326)
+rm(iNetRoad, GIS_road2)
+
+# Rename class
+# Classify road segments as sampled and non-sampled base on stations shp
+GIS_road <- GIS_road %>%
+  filter(fclass %in% c("motorway", "motorway_link",
+                       "trunk", "trunk_link",
+                       "primary", "primary_link",
+                       "secondary", "secondary_link",
+                       "tertiary", "tertiary_link")) %>%
+  mutate(fclass = recode(fclass, "motorway_link" = "motorway",
+                         "primary_link" = "primary",
+                         "trunk_link" = "trunk",
+                         "primary_link" = "primary",
+                         "secondary_link" = "secondary",
+                         "tertiary_link" = "tertiary"))
+
+all_stations <- bind_rows(auto_stations, my_stations)
+
+road_sampled <- sf::st_join(GIS_road, all_stations, st_is_within_distance, dist = 20, left = FALSE) %>%
+  dplyr::mutate(category = "sampled") %>%
+  sf::st_as_sf() %>%
+  sf::st_transform(crs = 4326)
+road_nonsampled <- GIS_road[!GIS_road$osm_id%in%road_sampled$osm_id,]
+road_nonsampled <- dplyr::mutate(road_nonsampled, category = "nonsampled")
+
+
+# Split data --------------------------------------------------------------
+
+#Split road segment based on station counting points 50/30/20%
+#stations_split <- road_sampled %>% dplyr::distinct(id, .keep_all = TRUE)
+
+road_sampled$fclass <- as.factor(road_sampled$fclass) #change the factor class to a factor
+road_sampled$FRC <- as.factor(road_sampled$FRC) #change the factor class to a factor
+
+set.seed(403)
+road_sampled_split <- initial_validation_split(road_sampled, strata = fclass)
+train_stations <- training(road_sampled_split)%>%
+  mutate(stations = "train")
+valid_stations <- validation(road_sampled_split) %>%
+  mutate(stations = "valid")
+test_stations <- testing(road_sampled_split)%>%
+  mutate(stations = "test")
+
+
+# Plotting ----------------------------------------------------------------
+
+plot_map2 <- ggplot() +
+  geom_sf(data = GIS_road, aes(geometry = geom, color = "Road nonsampled")) +
+  geom_sf(data = road_sampled, aes(geometry = geom, color = "Road sampled")) +
+  geom_sf(data = road_nonsampled, aes(geometry = geom, color = "Road sampled")) +
+  geom_sf(data = my_stations, aes(geometry = geometry, color = "Vehicle counting stations"),size = 1) +
+  geom_sf(data = auto_stations, aes(geometry = geometry, color = "Vehicle counting stations"),size = 1) +
+  scale_color_manual(
+    name = "Road segment Types",
+    values = c("Road sampled" = "#298c8c",
+               "Road nonsampled" = "#b8b8b8",
+               "Vehicle counting stations" = "#a00000")
+  ) +
+  labs(
+    title = "A) Road categories and vehicle counting stations",
+    subtitle = "for building Machine Learning model",
+    caption = "OpenStreetMap"
+  ) +
+  theme_bw() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5, size = 12, face = "italic"),
+    legend.title = element_text(face = "bold"),
+    legend.position = "bottom",
+    legend.background = element_rect(fill = "white", color = "black"),
+    legend.key = element_rect(fill = "white", color = "black"),
+    legend.key.size = unit(1, "lines"),
+    plot.caption = element_text(size = 8, face = "italic", hjust = 1)
+  )
+
+# Display the map
+plot_map2
+ggsave("road_net_map.png", plot_map2,   dpi = 600)
+
+
+
+#Plot Stations
+# Improved map with legend, title, and aesthetics
+plot_map <- ggplot() +
+  geom_sf(data = GIS_road, aes(geometry = geom), colour = "lightgray") +
+  geom_sf(data = train_stations, aes(geometry = geom, color = "Training"), lwd = 1) +
+  geom_sf(data = valid_stations, aes(geometry = geom, color = "Validation"),lwd = 1) +
+  geom_sf(data = test_stations, aes(geometry = geom, color = "Testing"), lwd = 1) +
+  scale_color_manual(
+    name = "Road segment Types",
+    values = c("Training" = "midnightblue",
+               "Validation" = "#298c8c",
+               "Testing" = "#a00000")
+  ) +
+  labs(
+    title = "B) Road Network split for training Machine Learning model",
+    subtitle = "Training (440), Validation (147), and Testing (148) road-sampled segments",
+    caption = "OpenStreetMap"
+  ) +
+  theme_bw() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5, size = 12, face = "italic"),
+    legend.title = element_text(face = "bold"),
+    legend.position = "bottom",
+    legend.background = element_rect(fill = "white", color = "black"),
+    legend.key = element_rect(fill = "white", color = "black"),
+    legend.key.size = unit(1, "lines"),
+    plot.caption = element_text(size = 8, face = "italic", hjust = 1)
+  )
+
+# Display the map
+plot_map
+ggsave("test_map.png", plot_map, dpi = 600)
+
+
+stations_model <- bind_rows(train_stations, test_stations, valid_stations) %>%
+  group_by(fclass, stations) %>%
+  summarise(n_stations = n(), .groups = "drop") %>%
+  st_drop_geometry()
+
+
+# Create the plot
+plot <- ggplot(stations_model, aes(x = fclass, y = n_stations, fill = stations)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.8), width = 0.7) +
+  scale_fill_manual(values = c("train" = "#1b9e77", "valid" = "#d95f02", "test" = "#7570b3")) +
+  labs(
+    title = "Number of road segments by road OSM class",
+    subtitle = "for training Machine Learning model",
+    x = "Road class",
+    y = "Number of segments",
+    fill = "Data"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+    axis.title.x = element_text(size = 12, face = "bold"),
+    axis.title.y = element_text(size = 12, face = "bold"),
+    axis.text.x = element_text(size = 14, angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 14),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 12)
+  )
+
+print(plot)
+ggsave("stations_map.png", plot, dpi = 600)
+
+# Pre-processing: traffic  ------------------------------------------------
+traffic <- readRDS("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/inputs/data/traffic_berlin_2015_2022.rds")
+traffic2 <- readRDS("/Users/co2map/Documents/auto_berlin/auto_bun__ber_2015_2022.rds") %>%
+  mutate(Pkw_auto = Pkw_R1 + Pkw_R2,
+         lkw_auto = Lkw_R1 + Lkw_R2,
+         Zst= as.factor(Zst)) %>%
+  rename(id = Zst)
+
+speed_auto <- st_join(auto_stations, GIS_road, join =st_nearest_feature, left = FALSE) %>%
+  st_drop_geometry() %>%
+  rename(speed = maxspeed) %>%
+  mutate(speed = as.character(speed)) %>%
+  select(id, speed)
+traffic_auto <- inner_join(traffic2, speed_auto, by = "id") %>%
+  filter(!id %in% c("2003", "2004", "2005","2013") )
+
+prep_traffic_data <- function(traffic.df = traffic,
+                              id = "id",  cars = "", speed = "", time = "hour", sta= "mean",
+                              ...){
+
+  #Define the period and pre-processing
+
+  if(!is.null(speed)) {
+
+    traffic_mod <- traffic.df %>%
+      openair::selectByDate(...) %>%
+      dplyr::select(date, id, all_of(cars), all_of(speed)) %>%
+      dplyr::rename(cars = {{ cars }}, speed = {{ speed }}, id = {{ id }}) %>%
+      dplyr::mutate(across(cars:speed, ~ as.numeric(ifelse(. < 1, NA, .)))) %>%
+      dplyr::mutate(id = as.factor(id))
+
+    # Handle ID as a factor
+
+    impute_recipe = recipes::recipe(date ~., data = traffic_mod) %>%
+      recipes::step_impute_median(cars, speed)
+
+    traffic_mod <- impute_recipe %>%
+      recipes::prep(traffic_mod) %>%
+      recipes::bake(new_data = NULL)
+
+    traffic_cars <- traffic_mod %>%
+      dplyr::select(date, id, cars) %>%
+      openair::timeAverage(avg.time = time, type = id, statistic = sta) %>%
+      na.omit() %>%
+      dplyr::mutate(cars = as.integer(cars))
+    setDT(traffic_cars)
+    traffic_cars <- traffic_cars %>% data.table::setkey(date)
+
+    traffic_speed <- traffic_mod %>%
+      dplyr::select(date, id, speed) %>%
+      openair::timeAverage(avg.time = time, type = id, statistic = "mean") %>%
+      na.omit() %>%
+      dplyr::mutate(speed = as.integer(speed))
+    setDT(traffic_speed)
+    traffic_speed <- traffic_speed %>% data.table::setkey(date)
+    traffic_res <- inner_join(traffic_cars, traffic_speed, by = c("date", "id")) %>%
+      dplyr::select(id, date, cars, speed)
+    traffic_res$date <- with_tz(traffic_res$date, tzone = "Europe/Berlin")
+
+    return(traffic_res)
+
+  }
+  else{
+
+    traffic_mod <- traffic.df %>%
+      openair::selectByDate(...) %>%
+      dplyr::select(date, id, all_of(cars)) %>%
+      dplyr::rename(cars = {{ cars }}, id = {{ id }}) %>%
+      mutate(across(cars, ~ as.numeric(ifelse(. < 1, NA, .)))) %>%
+      mutate(id = as.factor(id))
+
+    traffic_mod <- traffic_mod %>%
+      openair::timeAverage(avg.time = time, type = id, statistic = sta) %>%
+      na.omit() %>%
+      dplyr::mutate(cars = as.integer(cars))
+
+    impute_recipe = recipes::recipe(date ~., data = traffic_mod) %>%
+      recipes::step_impute_median(cars)
+
+    traffic_mod <- impute_recipe %>%
+      recipes::prep(traffic_mod) %>%
+      recipes::bake(new_data = NULL)
+
+    setDT(traffic_mod)
+    traffic_mod <- traffic_mod %>%
+      data.table::setkey(date) %>%
+      dplyr::select(id, date, cars)
+
+    return(traffic_mod)
+  }
+
+
+
+}
+traffic_res <- prep_traffic_data(traffic.df = traffic, cars = "kfz", speed = "speed_pkw",
+                                 year = 2018, time = "hour", sta = "mean")
+
+traffic_autoban <- prep_traffic_data(traffic.df = traffic_auto, cars = "Pkw_auto", speed = "speed",
+                                     year = 2018, time = "hour", sta = "mean")
+
+traffic_test <- bind_rows(traffic_autoban, traffic_res) %>%
+  arrange(date)
+
+#Split up traffic timeseries
+
+input_id <- traffic_test %>%
+  distinct(id)
+
+traffic_split_date <- function(input_id) {
+
+  level_id <-input_id[1]
+
+  df_split <- traffic_test %>%
+    filter(id == level_id) %>%
+    arrange(date)
+
+  monthlevel <-
+    expand_grid(1:12) %>% set_names("period") %>%
+    pivot_longer(period) %>% select(value)
+
+  traffic_split <- function(monthlevel) {
+    level <- monthlevel[1]
+    month_split <- df_split %>%
+      mutate(month = lubridate::month(date)) %>%
+      filter(month == paste0(level))
+
+      n <- nrow(month_split)
+      train_size <- floor(0.8 * n)
+      valid_size <- ceiling(0.1 * n)
+      test_size <- n - (train_size + valid_size)
+
+      # Create the split labels
+      split_labels <- c(rep("training", train_size),
+                        rep("valid", valid_size),
+                        rep("test", test_size))
+
+      month_split$split <- split_labels
+
+      # month_split$split <- rep(x = c("training", "valid", "test"),
+      #                          times = c(floor(x = 0.8 * nrow(x = month_split)),
+      #                                    ceiling(x = 0.1 * nrow(x = month_split)),
+      #                                    trunc(x = 0.1 * nrow(x = month_split))))
+
+      return(month_split)
+
+
+  }
+
+  split_list <- apply(monthlevel, 1, traffic_split)
+  split_list_res <- data.table::rbindlist(split_list)
+
+  return(split_list_res)
+}
+
+
+traffic_split_list <- pbapply::pbapply(input_id, 1, traffic_split_date)
+traffic_split_data <- data.table::rbindlist(traffic_split_list)
+
+traffic_train <- traffic_split_data[traffic_split_data$split == 'training',]
+traffic_test <- traffic_split_data[traffic_split_data$split == 'test',]
+traffic_valid <- traffic_split_data[traffic_split_data$split == 'valid',]
+
+#Join data
+train_stations$id <- as.character(train_stations$id)
+valid_stations$id <- as.character(valid_stations$id)
+test_stations$id <- as.character(test_stations$id)
+traffic_train$id <- as.character(traffic_train$id)
+traffic_valid$id <- as.character(traffic_valid$id)
+traffic_test$id <- as.character(traffic_test$id)
+
+train_dataset <- dplyr::inner_join(traffic_train, train_stations, by ="id") %>% #create a traffic and stations by the "id".
+  dplyr::inner_join(my_weather, by = "date")
+
+valid_dataset <- dplyr::inner_join(traffic_valid, valid_stations, by ="id") %>%
+  dplyr::inner_join(my_weather, by = "date")
+
+test_dataset <- dplyr::inner_join(traffic_test, test_stations, by ="id") %>%
+  dplyr::inner_join(my_weather, by = "date")
+
+#===========================================================================
+
+# Recipes for pre-processing
+train_prep <- train_dataset %>% dplyr::select(-geom, -id, -osm_id,  -category, -split, -month)
+test_prep <- test_dataset %>% dplyr::select(-geom, -id, -osm_id,  -category, -split, -month)
+valid_prep <- valid_dataset %>% dplyr::select(-geom, -id, -osm_id,  -category, -split, -month)
+
+#Create a recipe
+recipe_steps <- recipe(cars + speed ~ ., data = train_prep) %>%
+  # step_mutate(road_capacity = as.numeric(lanes) * as.numeric(length) * as.numeric(maxspeed),
+  #             vehicle_density = 1 / (as.numeric(lanes) * as.numeric(length)),
+  #             effective_capacity = (as.numeric(lanes) * as.numeric(length)) / 2,
+  #             flow_per_lane = road_capacity / as.numeric(lanes),
+  #             saturation_flow_rate = effective_capacity / 3600) %>%
+  step_log_interval(dtvw_kfz, dtvw_lkw, resident,resident_hac,
+                    offset = 1) %>%
+  step_impute_mode(lanes, maxspeed, landuseAtlas) %>%
+  step_holiday(date, holidays = timeDate::listHolidays("DE")) %>%
+  step_timeseries_signature(date) %>%
+  step_rm(StreetName, contains("index.num"), contains("lbl"), contains("iso"), contains("xts"))
+
+#Apply the recipe
+train_mod <- recipe_steps %>%
+  prep(train_prep) %>%
+  bake(train_prep)
+
+valid_mod <- recipe_steps %>%
+  prep(valid_prep) %>%
+  bake(valid_prep)
+
+test_mod <- recipe_steps %>%
+  prep(test_prep) %>%
+  bake(test_prep)
+
+
+#Check
+str(train_mod)
+str(valid_mod)
+str(test_mod)
+
+#======================================================================
+#Training model by Road classs
+#======================================================================
+
+class_process <- expand.grid(
+  my_classes = c("motorway", "primary", "secondary", "tertiary"),
+  stringsAsFactors = FALSE)
+
+train_multiple_mod <- function(class, valid = NULL, test = NULL) {
+
+  df_train <-  train_mod  %>%
+    dplyr::select(-date) %>%
+    filter(fclass == paste0(class))
+
+  mod_train_cars <- ranger(cars ~ ., data = df_train %>% dplyr::select(-speed),
+                           #importance = "permutation",
+                           num.threads = n.cores,
+                           num.trees = 500)
+
+  mod_train_speed <- ranger(speed ~ ., data = df_train %>% dplyr::select(-cars),
+                            #importance = "permutation",
+                            num.threads = n.cores,
+                            num.trees = 500)
+
+  if (valid == TRUE) {
+
+    #Predict with trained model
+    df_valid <-  valid_mod  %>%
+      filter(fclass == paste0(class))
+
+    rfModel_pred_cars <- predict(mod_train_cars, data = df_valid)$predictions %>%
+      as_tibble() %>% rename(estimate_cars = value) %>%
+      mutate(estimate_cars = as.integer(estimate_cars))
+
+    rfModel_pred_speed <- predict(mod_train_speed, data = df_valid)$predictions %>%
+      as_tibble() %>% rename(estimate_speed = value) %>%
+      mutate(estimate_speed = as.integer(estimate_speed))
+
+    df_predictions <- bind_cols(rfModel_pred_cars,
+                                rfModel_pred_speed,
+                                valid_mod %>% filter(fclass == paste0(class))) %>%
+      rename(truth_cars = cars,
+             truth_speed = speed)
+    return(df_predictions)
+
+  }
+
+  if (test == TRUE) {
+
+    #Predict with trained model
+    df_test <-  test_mod  %>%
+      filter(fclass == paste0(class))
+
+    rfModel_pred_cars <- predict(mod_train_cars, data = df_test)$predictions %>%
+      as_tibble() %>% rename(estimate_cars = value) %>%
+      mutate(estimate_cars = as.integer(estimate_cars))
+
+    rfModel_pred_speed <- predict(mod_train_speed, data = df_test)$predictions %>%
+      as_tibble() %>% rename(estimate_speed = value) %>%
+      mutate(estimate_speed = as.integer(estimate_speed))
+
+    df_predictions <- bind_cols(rfModel_pred_cars,
+                                rfModel_pred_speed,
+                                test_mod %>% filter(fclass == paste0(class))) %>%
+      rename(truth_cars = cars,
+             truth_speed = speed)
+    return(df_predictions)
+
+  }
+
+}
+
+n.cores <- parallel::detectCores()-1
+cl <- parallel::makeForkCluster(n.cores)
+doParallel::registerDoParallel(cl)
+
+train_model <- foreach::foreach(
+  i=1:nrow(class_process),
+  .combine = "bind_rows",
+  .errorhandling = "remove"
+) %dopar%
+  train_multiple_mod(test = TRUE,
+    class = class_process$my_classes[i])
+
+parallel::stopCluster(cl)
+
+
+saveRDS(train_model,"test_ML_traffic_HDT_multiple_models2.rds")
+#======================================================================
+#Assessment of predictions
+#======================================================================
+
+#res_PC <- readRDS("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/CO2-traffic-emissions/test_ML_traffic_PC_multiple_models.rds")
+res_PC <- readRDS("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/CO2-traffic-emissions/valid_ML_traffic_PC_multiple_models.rds")
+res_PC <- readRDS("valid_ML_traffic_HDT.rds")
+res_PC <- train_model
+# Cars --------------------------------------------------------------------
+openair::scatterPlot(res_PC,
+                     x ="estimate_cars", y= "truth_cars", type = "fclass",
+                     pch = 21:22, cex = 0.2, linear = TRUE, plot.type = "p",
+                     fill = c("#4a8bad"),
+                     fontsize = 22,
+                     col = "#4a8bad",
+                     xlab = "Predicted", y.relation = "free", x.relation = "free",
+                     ylab = "Observed")
+png("test_ML.png", width = )
+
+
+train_mot <- res_PC %>%
+  filter(fclass =="motorway") %>%
+  mutate(truth_cars = log10(truth_cars),
+         estimate_cars =log(estimate_cars))
+
+png("test_ML_traffic_HDT.jpeg", width = 22, height = 14.8, units = "in", res = 600)
+train_mot %>% bind_rows(res_PC %>% filter(fclass !="motorway")) %>%
+  select(date, fclass, truth_cars, estimate_cars) %>%
+  timeVariation(pollutant = c("truth_cars", "estimate_cars"),
+                name.pol = c("Observed", "Modelled"), type = "fclass",
+                cols = c("#4a8bad", "#ffa500"),
+                xlab = c("hour"),
+                fontsize = 20, lwd = 2, lty = 1,
+                normalise = "TRUE",
+                ylab = "Traffic flow [veh/h]",
+                main = "")
+dev.off()
+
+png("test_ML_speed_PC.png", width = 22, height = 14.8, units = "in", res = 600)
+train_mot <- res_PC %>%
+  filter(fclass =="motorway") %>%
+  mutate(truth_cars = truth_cars/10,
+         estimate_cars = estimate_cars/10,
+         truth_speed = truth_speed/1,
+         estimate_speed = estimate_speed/01)
+png("test_ML_speed_PC.png", width = 22, height = 14.8, units = "in", res = 600)
+res_PC %>% #bind_rows(res_PC %>% filter(fclass !="motorway")) %>%
+  timeVariation(pollutant = c("truth_speed", "estimate_speed"),
+                name.pol = c("Observed speed", "Modelled speed"), type = "fclass",
+                cols = c("#0d7d87", "#f55f74"),
+                xlab = c("hour"),
+                fontsize = 20, lwd = 2, lty = 1,
+                #normalise = "TRUE",
+                ylab = "Average speed [km/h]",
+                main = "")
+dev.off()
+
+#Metrics
+mod_hour <- res_PC %>%
+  modStats(obs = "truth_speed", mod = "estimate_speed")
+
+MAE <- res_PC %>%
+  #group_by(fclass) %>%
+  yardstick::mae(truth_speed, estimate_speed) %>%
+  #group_by(fclass) %>%
+  summarise(MAE = mean(.estimate))
+
+#RMD
+rmd <- res_PC %>%
+  select(date, fclass, estimate_cars, truth_cars) %>%
+  group_by(date, fclass) %>%
+  reframe(RMD = round((estimate_cars - truth_cars) / mean(c(estimate_cars, truth_cars)) * 100, digits = 2),
+          AD = estimate_cars - truth_cars) %>%
+  group_by(fclass) %>%
+  reframe(RMD = mean(RMD))
+summary(rmd)
+
+mod_metrics <- mod_hour %>%
+  inner_join(MAE, by = "fclass") %>%
+  inner_join(rmd, by = "fclass") %>%
+  select(fclass, n, r, MB, RMSE, MAE, RMD)
+
+# Speed -------------------------------------------------------------------
+mod_hour <- res_PC %>%
+  modStats(obs = "truth_speed", mod = "estimate_speed", type = "fclass")
+
+MAE <- res_PC %>%
+  #group_by(fclass) %>%
+  yardstick::mae(truth_speed, estimate_speed) %>%
+  group_by(fclass) %>%
+  summarise(MAE = mean(.estimate))
+
+rmd <- res_PC %>%
+  select(date, fclass, estimate_speed, truth_speed) %>%
+  group_by(date, fclass) %>%
+  reframe(RMD = round((estimate_speed - truth_speed) / mean(c(estimate_speed, truth_speed)) * 100, digits = 2),
+          AD = estimate_speed - truth_speed) %>%
+  group_by(fclass) %>%
+  reframe(RMD = mean(RMD))
+summary(rmd)
+
+mod_metrics <- mod_hour %>%
+  inner_join(MAE, by = "fclass") %>%
+  inner_join(rmd, by = "fclass") %>%
+  select(fclass, n, r, RMSE, MAE, RMD)
+
+#Feature importance
+vip_cars <- fread("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/articleML/importance_cars1.csv")
+#vip_cars <- mod_train_cars %>% vip::vip(num_features = length(colnames(.)))
+vip_cars <- vip_cars %>% #vip_cars$data %>%
+  mutate(importance = round(importance / sum(importance) * 100, digits = 2)) %>%
+  arrange(desc(importance)) %>%
+  set_names(c("variable.cars", "importance.cars"))
+
+feat_1 <- ggplot(vip_cars %>% head(20),
+                 aes(x=reorder(variable.cars,importance.cars), y=importance.cars, fill=importance.cars)) +
+  geom_bar(stat="identity", position="dodge", show.legend = FALSE)+
+  coord_flip(expand = FALSE, clip = "off") +
+  geom_text(aes(label = round(importance.cars, digits = 2)), hjust = 0, size = 6) +
+  scale_fill_viridis_c(direction = -1,option = "B") +
+  scale_y_continuous(expand = FALSE, limits = c(0, 20))+
+  ggplot2::labs(title = "",
+                x = "Features",
+                y = "Cumulative contribution (%)") +
+  ggplot2::theme_classic() +
+  #ggplot2::labs(caption = "Source: ...") +
+  ggplot2::theme(panel.background = ggplot2::element_rect(),
+                 title = ggplot2::element_text(size = 20),
+                 axis.text.x = ggplot2::element_text(size = 17),
+                 axis.title.x =ggplot2::element_text(size = 17, face = "bold"),
+                 axis.text.y = ggplot2::element_text(size = 17),
+                 axis.title.y =ggplot2::element_text(size = 17, face = "bold"),
+                 plot.margin = ggplot2::margin(25, 25, 10, 25))
+
+vip_speed <- fread("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Transport/articleML/importance_speed1.csv")
+
+#vip_speed <- mod_train_speed %>% vip::vip(num_features = length(colnames(.)))
+vip_speed <- vip_speed %>% #vip_speed$data %>%
+  mutate(importance = round(importance / sum(importance) * 100, digits = 2)) %>%
+  arrange(desc(importance)) %>%
+  set_names(c("variable.speed", "importance.speed"))
+
+feat_2 <- ggplot(vip_speed %>% head(20),
+                 aes(x=reorder(variable.speed, importance.speed), y=importance.speed, fill=importance.speed))+
+  geom_bar(stat="identity", position="dodge", show.legend = FALSE)+
+  coord_flip(expand = FALSE, clip = "off") +
+  geom_text(aes(label = round(importance.speed, digits = 2)), hjust = 0, size = 6) +
+  scale_fill_viridis_c(direction = -1,option = "E") +
+  scale_y_continuous(expand = FALSE, limits = c(0, 20))+
+  ggplot2::labs(title = "",
+                x = "",
+                y = "Cumulative contribution (%)") +
+  ggplot2::theme_classic() +
+  #ggplot2::labs(caption = "Source: ...") +
+  ggplot2::theme(panel.background = ggplot2::element_rect(),
+                 title = ggplot2::element_text(size = 17),
+                 axis.text.x = ggplot2::element_text(size = 17),
+                 axis.title.x =ggplot2::element_text(size = 17, face = "bold"),
+                 axis.text.y = ggplot2::element_text(size = 17),
+                 axis.title.y =ggplot2::element_text(size = 17, face = "bold"),
+                 plot.margin = ggplot2::margin(25, 25, 10, 25))
+
+
+iplot4 <- ggpubr::ggarrange(feat_1, feat_2,
+                    hjust = -0.2,
+                    font.label = list(size = 18, color = "black", face = "bold", family = NULL),
+                    labels = c("A) - Traffic flow impact predicitions", "B) - Average speed impact predicitions"))
+
+ggsave("articleML/Fig5_new.png", width = 13*2.54, height = 10*2.54, unit = "cm", dpi = 600, iplot4)
+
+#======================================================================
+#FEATURE selection SHAP (SHapley Additive exPlanations)
+#======================================================================
+xvars <- names(train_mod %>% dplyr::select(-speed, -cars))
+X_cars <- train_mod %>% dplyr::select(-cars)
+X_cars <- X_cars[sample(nrow(X_cars), 1000), xvars]
+
+# 2) Select background data
+bg_X_cars <- train_mod %>% dplyr::select(-cars)
+bg_X_cars <- bg_X_cars[sample(nrow(bg_X_cars), 200), ]
+
+shap_rf_cars <- kernelshap(mod_train_cars, X_cars, bg_X = bg_X_cars)
+
+# Visualize
+sv_cars <- shapviz(shap_rf_cars)
+
+#Salve
+write_rds(sv_cars, "SHAP_PC_modelRF_2019_1000rows_cars.rds")
+#sv_cars<- readRDS("SHAP_PC_modelRF_2019_1000rows.rds")
+
+sv_importance(sv_cars, kind = "beeswarm", max_display = 30,
+              viridis_args = list(begin = 0.25, end = 0.85, option = "B", direction = -1)) +
+  labs(title = "PC - Traffic flow speed predictions",
+       x = "SHAP value (impact on model outupt)")+
+  theme_minimal()+
+  theme(legend.text = element_text(size =12),
+        plot.title.position = "plot", # left-align title
+        plot.title = element_text(face = "bold", size = rel(1.4)), # larger, bold title
+        axis.text = element_text(size =14), # monospaced font for axes
+        axis.title = element_text(color = "grey20", size = 16, face = "bold"),
+        panel.grid.major.x = element_blank(), # no vertical major lines
+        panel.grid.minor = element_blank(), # no minor grid lines
+        panel.spacing.x = unit(20, "pt"), # increase white space between panels
+        panel.spacing.y = unit(10, "pt"), # increase white space between panels
+        plot.margin = margin(rep(30, 4)) # adjust white space around plot
+  )
+
+ggsave("SHAP_PC.png", width = 8.5, height = 7, dpi=600)
+
+
+X_speed <- train_mod %>% dplyr::select(-speed)
+X_speed <- X_speed[sample(nrow(X_speed), 1000), xvars]
+
+# 2) Select background data
+bg_X_speed <- train_mod %>% dplyr::select(-speed)
+bg_X_speed <- bg_X_speed[sample(nrow(bg_X_speed), 200), ]
+
+shap_rf_speed <- kernelshap(mod_train_speed, X_speed, bg_X = bg_X_speed)
+
+# Visualize
+sv_speed <- shapviz(shap_rf_speed)
+
+
+write_rds(sv_speed, "SHAP_PC_modelRF_2019_1000rows_speed.rds")
+#sv_speed<- readRDS("SHAP_PC_modelRF_2019_1000rows.rds")
+
+sv_importance(sv_speed, kind = "beeswarm", max_display = 30,
+              viridis_args = list(begin = 0.25, end = 0.85, option = "D", direction = -1)) +
+  labs(title = "PC - Average speed predictions",
+       x = "SHAP value (impact on model outupt)")+
+  theme_minimal()+
+  theme(legend.text = element_text(size =12),
+    plot.title.position = "plot", # left-align title
+    plot.title = element_text(face = "bold", size = rel(1.4)), # larger, bold title
+    axis.text = element_text(size =14), # monospaced font for axes
+    axis.title = element_text(color = "grey20", size = 16, face = "bold"),
+    panel.grid.major.x = element_blank(), # no vertical major lines
+    panel.grid.minor = element_blank(), # no minor grid lines
+    panel.spacing.x = unit(20, "pt"), # increase white space between panels
+    panel.spacing.y = unit(10, "pt"), # increase white space between panels
+    plot.margin = margin(rep(30, 4)) # adjust white space around plot
+  )
+

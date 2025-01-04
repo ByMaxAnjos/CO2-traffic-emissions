@@ -1,0 +1,507 @@
+#=======================================================================================
+#
+# Title:       High Spatio-temporal Traffic (car flux and speed) and CO2 Emissions Predictions using Machine Learning.
+# Author:      Dr. Max Anjos (maxanjos@campus.ul.pt)
+# Description: More details on the approach are available at:
+#             https://github.com/ByMaxAnjos/CO2-traffic-emissions
+# Data: 09.10.2022
+#
+#' @param traffic (required). Local traffic data. I must have the following columns named as date, mycars, myspeed, and id. The id means identifier that links traffic data with the count traffic stations.
+#' @param traffic_stations (required). Traffic point count stations with latitude, longitude and ID. It could be at shapefile or csv format.
+#' @param GIS_features (conditionally required). Landuse, density population and traffic volume in 2019 maps from the Berlin Urban Atlas (fisbroker) site.
+#' @param networ_Tomtom (optional). Shapefile of the raod network from the TomTom.
+#' @param weather (conditionally required) Hourly meteorological data from the German Weather Service (DWD package).
+#' @return CO2 emissions: csv. table, plots and sf multipolylines and raster map with 100 meters of resolution.
+#' @examples
+#=======================================================================================
+
+library(lubridate)
+library(tidyverse)
+library(data.table)
+library(sf)
+library(raster)
+library(openair)
+library(caret)
+library(recipes)
+library(timetk)
+library(ranger)
+
+#Define your directory
+#setwd("C:/Users/Anjos/Documents/Berlin/")
+setwd("/Users/co2map/Documents/CO2CityMap/Berlin/Components")
+#setwd("/Users/test/Documents/CO2CityMap/Berlin/Components")
+source("Transport/Rcode/emission_cluster_functions.R")
+
+
+#Increasing the memory before the calculation (windows)
+# mymemory <- memory.limit() * 3
+# memory.limit(size = mymemory)
+
+
+#=================================================================
+# Load data and pre-processing
+#=================================================================
+#Read traffic data file
+traffic_data <- fread("/Users/co2map/Documents/Berlim_CO2map/data_traffic_berlin/traffic_berlin_2022_08_09.csv")
+traffic_data <- readRDS("Transport/inputs/data/traffic_berlin_2015_2022.rds") %>%
+  openair::selectByDate(year = 2019:2020) %>%
+  dplyr::select(date, id, kfz, speed_kfz)
+traffic_data$id <- as.factor(traffic_data$id)
+
+#Read weather data file
+weather <- fread("Transport/inputs/data/weather_berlin_2002_2023.csv")
+weather <- with_tz(weather, tz = "Europe/Berlin")
+
+#Read stations ESRI shapefile
+stations <- sf::read_sf("Transport/inputs/shps/stations_berlin.shp") %>%
+  st_as_sf() %>% # convert to sf object
+  st_transform(crs = 4326)
+
+#Read road network ESRI shapefile from TomTom
+network_gis <- sf::read_sf("Transport/inputs/shps/network_berlin.shp") %>%
+  mutate(Id = as.factor(Id)) %>%
+  subset(FRC != "0") %>%
+  subset(FRC != "6") %>%
+  subset(FRC != "7") %>%
+  dplyr::select(Id, StreetName, FRC, Length, SpeedLimit, geometry) %>%
+  rename(length = Length) %>%
+  st_as_sf() %>%
+  st_transform(crs = 4326)
+
+#Select roads without cars 22 sep 2022. https://www.berlin.de/sen/uvk/presse/pressemitteilungen/2022/pressemitteilung.1246013.php
+# DayCars_raods <- network_gis %>%
+#   filter(grepl("Windscheid|Blücherstraße|Görlitzer Ufer|Windscheid|Niederbarnimstraße|Kastanienallee|Tegeler Straße|Kienitzer Straße|Bötzowstraße",
+#               StreetName))
+
+# DayCars_raods <- network_gis %>%
+#   filter(grepl("Windscheid|Blücherstraße|Kienitzer Straße|Kastanienallee", StreetName))
+#qtm(DayCars_raods, lines.col = "darkorange2", lines.lwd = 4)
+
+#Read density population ESRI shapefile from Berlin Atlas
+pop_gis <- sf::read_sf("Transport/inputs/shps/pop_2020.shp") %>%
+  dplyr::select(ew2020, ew_ha_2020, geometry) %>%
+  rename(resident = ew2020, resident_hac = ew_ha_2020) %>%
+  st_as_sf() %>%
+  st_transform(crs = 4326)
+
+#Read land use ESRI shapefile from Berlin Atlas
+land_gis <- sf::read_sf("Transport/inputs/shps/uso_real_2020.shp") %>%
+  dplyr::select(woz, geometry) %>%
+  rename(landuseAtlas = woz) %>%
+  mutate(landuseAtlas = factor(landuseAtlas)) %>%
+  st_as_sf() %>%
+  st_transform(crs = 4326)
+
+#Read daily traffic ESRI shapefile from Berlin Atlas
+vtm_map19 <- sf::read_sf("Transport/inputs/shps/atlastraffic_ber_2019.shp") %>%
+  rename(dtvw_kfz19 = dtvw_kfz) %>%
+  st_as_sf() %>%
+  st_transform(crs = 4326)
+
+#Read road_OSM
+road_OSM <- sf::read_sf("Transport/inputs/shps/road_osm_feat.shp") %>%
+  subset(fclass != "residential") %>%
+  subset(fclass != "trunk") %>%
+  mutate_if(is.integer, as.factor) %>% st_as_sf() %>% st_transform(crs = 4326)
+
+#=================================================================
+# Classify the roads as sampled, nonsampled and motorway
+#=================================================================
+
+#Separate sampled road and non-sampled road based on stations counting
+road_sampled <- st_join(stations, network_gis, join = st_is_within_distance, dist = 20, left = FALSE) %>%
+  as.data.frame() %>% dplyr::select(Id) %>% inner_join(network_gis, by = "Id") %>%
+  #distinct(Id, .keep_all = TRUE) %>%
+  mutate(category = "sampled") %>% st_as_sf() %>% st_transform(crs = 4326)
+
+road_nonsampled <- network_gis[!network_gis$Id%in%road_sampled$Id,]
+road_nonsampled <- mutate(road_nonsampled, category = "nonsampled")
+roads_mod <- bind_rows(road_sampled, road_nonsampled)
+rm(road_sampled, road_nonsampled, network_gis)
+
+#Joined road OSM with network from the TomTom
+GIS_road <- st_join(roads_mod, road_OSM, join =st_nearest_feature, left = FALSE)
+GIS_road <- st_join(GIS_road, vtm_map19, st_nearest_feature, st_is_within_distance, dist = 0.1)
+GIS_road  <- st_join(GIS_road , pop_gis, st_nearest_feature, st_is_within_distance, dist = 0.1)
+GIS_road  <- st_join(GIS_road, land_gis, st_nearest_feature, st_is_within_distance, dist = 0.1)
+
+#Clean the variables
+GIS_road <- GIS_road %>%
+  dplyr::select(Id, StreetName, FRC, length.x, SpeedLimit, category, fclass, lanes, maxspeed, amenity, leisure, landuse, place,
+                natural, shop, dtvw_kfz19, resident, resident_hac, landuseAtlas, geometry) %>%
+  rename(length = length.x)
+
+#Split up sampled roads and non-sampled roads. Use only the sample roads to build ML model: training and test with 70/30%
+GIS_road_sampled <- GIS_road[GIS_road$category=='sampled',]
+GIS_road_nonsampled <- GIS_road[GIS_road$category=='nonsampled',]
+GIS_road_sampled$FRC <- as.factor(GIS_road_sampled$FRC)
+
+#IMPORTANT:motorway
+network_motor <- sf::read_sf("Transport/inputs/shps/network_berlin.shp") %>%
+  filter(FRC == "0") %>%
+  mutate(category = "motorway") %>%
+  dplyr::select(Id, StreetName, FRC, category, Length, SpeedLimit, geometry) %>%
+  rename(length = Length) %>%
+  st_as_sf() %>%
+  st_transform(crs = 4326)
+
+motorway_road <- network_motor %>%
+  st_join(road_OSM %>%  filter(fclass == "motorway")) %>%
+  st_join(vtm_map19) %>% st_join(pop_gis, st_nearest_feature) %>% st_join(land_gis, st_nearest_feature) %>%
+  dplyr::select(Id, StreetName, FRC, length.x, SpeedLimit, category, fclass, lanes, maxspeed, amenity, leisure, landuse, place,
+                natural, shop, dtvw_kfz19, resident, resident_hac, landuseAtlas, geometry) %>%
+  rename(length = length.x)
+
+#=====================================================================
+# Train the ML algorithm with GIS stations and Calculate CO2 emissions
+#=====================================================================
+
+# traffic covid
+traffic_lock <- traffic_data %>%
+  inner_join(LOCK, by= "date") %>% 
+  openair::timeAverage(avg.time = "day", type = "id") %>%
+  mutate(COVID = "LOCK") %>%
+  na.omit()
+
+traffic_base <- traffic_data %>%
+  selectByDate(start = "21/3/2019", end = "31/7/2019", hour = 0:23) %>%  
+  openair::timeAverage(avg.time = "day", type = "id") %>%
+  mutate(COVID = "BASE") %>%
+  na.omit()
+
+
+traffic_mod <- traffic_base %>%
+  mutate(weekday = weekdays(date)) %>%
+  filter(weekday == "Saturday") %>% 
+  group_by(id) %>% 
+  summarise(kfz = mean(kfz),
+            speed_kfz = mean(speed_kfz)) 
+
+#Join point counting stations
+stations_mod <- st_join(stations, GIS_road_sampled,
+                        join = st_is_within_distance, dist = 30, left = FALSE)
+
+#Join traffic timeseries to stations by using id
+traffic_mod$id <- as.factor(traffic_mod$id)
+stations_mod$id <- as.factor(stations_mod$id)
+
+traffic_join <- inner_join(traffic_mod, stations_mod, by ="id") %>% 
+  distinct(id, .keep_all = T)
+
+traffic_join$kfz <- as.numeric(traffic_join$kfz)
+traffic_join$speed_kfz <- as.numeric(traffic_join$speed_kfz)
+
+features <- traffic_join %>%
+  # group_by(date, Id) %>%
+  # summarise(mean_kfz = mean(kfz),
+  #           mean_speedkfz = mean(speed_kfz), .groups = "drop") %>%
+  # filter(mean_kfz>0, mean_speedkfz >0) %>%
+  #inner_join(GIS_road_sampled, by= "Id", relationship = "many-to-many") %>%
+  #inner_join(weather, by= "date", relationship = "many-to-many") %>% #Join weather data
+  dplyr::select(-id, -Id, -Latitude, -Longitude, -StreetName, category, -geometry) %>% #Select features
+  mutate_if(is.character, as.factor)
+features$SpeedLimit <- as.factor(features$SpeedLimit)
+
+
+# Timeseries for ML using the idx_date and signature
+receipe_steps <-
+  recipe(kfz + speed_kfz ~., data = features) %>% # Depend variable selected
+  step_rm(category) %>%
+  step_impute_mean(all_numeric_predictors()) %>% #Impute values for numeric predictors and outcomes
+  step_impute_mode(SpeedLimit, maxspeed, lanes, landuseAtlas) %>% #Impute values for nominal/categorical variables
+  step_unknown(all_nominal_predictors()) %>%
+  step_other(all_nominal_predictors(), -FRC, -SpeedLimit, -maxspeed, -lanes, -landuseAtlas)
+#step_normalize(all_numeric_predictors()) %>% # Normalize numeric data to have a standard deviation of one and a mean of zero.
+#step_holiday(date, holidays = timeDate::listHolidays("DE")) %>%
+#step_nzv(all_numeric_predictors()) %>% # remove variables that are highly sparse and unbalanced.
+#step_timeseries_signature(date) %>% # creating indexes from date-time
+#step_rm(date)
+train_recipe <- receipe_steps %>%
+  prep(features) %>%
+  bake(features)
+
+#select CARS for prediction
+train_processed <- train_recipe %>%
+  dplyr::select(-speed_kfz)
+
+#ML-ranger
+MLcars <- ranger(kfz ~ ., data = train_processed, num.trees = 100)
+
+#ranger speed
+train_processed <- train_recipe %>%
+  dplyr::select(-kfz)
+
+MLspeed <- ranger(speed_kfz ~ ., data = train_processed, num.trees = 100)
+
+features_nonsampled <- GIS_road_nonsampled %>%
+  st_drop_geometry() %>%
+  mutate_if(is.character, as.factor)
+features_nonsampled$FRC <- as.factor(features_nonsampled$FRC)
+features_nonsampled$SpeedLimit <- as.factor(features_nonsampled$SpeedLimit)
+
+receipe_steps <-
+  recipe(Id ~., data = features_nonsampled) %>% # Depend variable selected
+  step_rm(Id, StreetName, category) %>%
+  step_impute_mean(all_numeric_predictors()) %>% #Impute values for numeric predictors and outcomes
+  step_impute_mode(SpeedLimit, maxspeed, lanes, landuseAtlas) %>% #Impute values for nominal/categorical variables
+  step_unknown(all_nominal_predictors()) %>%
+  step_other(all_nominal_predictors(), -FRC, -SpeedLimit, -maxspeed, -lanes, -landuseAtlas)
+#step_holiday(date, holidays = timeDate::listHolidays("DE")) %>%
+#step_timeseries_signature(date) %>% # creating indexes from date-time
+#step_rm(date)
+dataset_processed <- receipe_steps %>%
+  prep(features_nonsampled) %>%
+  bake(features_nonsampled)
+
+options(digits = 1)
+model_pred_cars <- predict(MLcars, data=dataset_processed) #Predicting the cars
+cars_pred <- model_pred_cars$predictions %>%
+  as_tibble() %>% bind_cols(GIS_road_nonsampled %>% dplyr::select(Id, length)) %>%
+  rename(cars=value)
+
+options(digits = 1)
+model_pred_speed <- predict(MLspeed, data=dataset_processed)   #Predicting the speed
+speed_pred <- model_pred_speed$predictions %>%
+  as_tibble() %>% 
+  rename(speed=value)
+
+traffic_pred <- cars_pred %>% #Join cars and speed predication
+  bind_cols(speed_pred) %>% dplyr::select(-geometry)
+
+options(digits = 1)
+traffic_CO2_nonsampled <- ECO2traffic(traffic_pred, coeffs)
+
+#Calculate CO2 for sampled roads
+traffic_CO2_sampled <- traffic_join %>% 
+  rename(cars = kfz, speed = speed_kfz) %>% 
+  dplyr::select(Id, cars, speed, length) %>%
+  group_by(Id) %>% 
+  summarise(cars = sum(cars),
+            speed = mean(speed),
+            length = mean(length)) %>% 
+  ECO2traffic(coeffs) 
+
+#Include the motorway
+features_motorway <- motorway_road %>%
+  mutate(cars= dtvw_kfz19/24, speed = SpeedLimit) %>%
+  as_tibble() %>% dplyr::select(-geometry) %>%
+  mutate_if(is.character, as.factor)
+features_motorway$FRC <- as.factor(features_motorway$FRC)
+features_motorway$SpeedLimit <- as.factor(features_motorway$SpeedLimit)
+
+receipe_steps <-
+  recipe(Id ~., data = features_motorway) %>% #
+  step_rm(Id, StreetName, category) %>%
+  step_impute_mean(all_numeric_predictors()) %>% #Impute values for numeric predictors and outcomes
+  step_impute_mode(SpeedLimit, maxspeed, lanes, landuseAtlas) %>% #Impute values for nominal/categorical variables
+  step_unknown(all_nominal_predictors()) %>%
+  step_other(all_nominal_predictors(), -FRC, -SpeedLimit, -maxspeed, -lanes, -landuseAtlas) 
+
+dataset_processed <- receipe_steps %>%
+  prep(features_motorway) %>%
+  bake(features_motorway)
+
+traffic_CO2_motor <- dataset_processed %>%
+  bind_cols(features_motorway %>% dplyr::select(Id)) %>% 
+  dplyr::select(Id, cars, speed, length) %>%
+  ECO2traffic(coeffs)
+
+traffic_CO2_motor$Id <- as.factor(traffic_CO2_motor$Id)
+traffic_CO2_sampled$Id <- as.factor(traffic_CO2_sampled$Id)
+traffic_CO2_motor$Id <- as.factor(traffic_CO2_motor$Id)
+
+traffic_CO2_lock_monday <- bind_rows(traffic_CO2_sampled, traffic_CO2_nonsampled, traffic_CO2_motor) %>% 
+  mutate(period = "Lock",
+         weekday = "Monday")
+
+traffic_CO2_lock_monday
+traffic_CO2_lock_saturday <- bind_rows(traffic_CO2_sampled, traffic_CO2_nonsampled, traffic_CO2_motor) %>% 
+  mutate(weekday = "Saturday")
+
+traffic_CO2_base_monday <- bind_rows(traffic_CO2_sampled, traffic_CO2_nonsampled, traffic_CO2_motor) %>% 
+  mutate(period = "Base",
+         weekday = "Monday")
+
+traffic_CO2_base_saturday <- bind_rows(traffic_CO2_sampled, traffic_CO2_nonsampled, traffic_CO2_motor) %>% 
+  mutate(weekday = "Saturday")
+
+berlin_monday <- traffic_CO2_lock_monday %>% 
+  dplyr::select(Id, weekday, ECO2_gmh) %>% 
+  distinct(Id, .keep_all = TRUE) %>%
+  mutate(lock_monday = ECO2_gmh) %>% 
+  inner_join(traffic_CO2_base_monday %>% 
+               dplyr::select(Id, ECO2_gmh) %>% 
+               distinct(Id, .keep_all = TRUE) %>% 
+               mutate(base_monday = ECO2_gmh), by = "Id") %>% 
+  dplyr::select(Id, lock_monday, base_monday, weekday) %>% 
+  mutate(MRF = round((lock_monday-base_monday)/base_monday*100, digits = 2)) %>% 
+  inner_join(network_gis, by= "Id") %>% 
+  filter(MRF<100)
+
+berlin_saturday <- traffic_CO2_lock_saturday %>% 
+  dplyr::select(Id, weekday, ECO2_gmh) %>% 
+  distinct(Id, .keep_all = TRUE) %>%
+  mutate(lock_saturday = ECO2_gmh) %>% 
+  inner_join(traffic_CO2_base_saturday %>% 
+               dplyr::select(Id, ECO2_gmh) %>% 
+               distinct(Id, .keep_all = TRUE) %>% 
+               mutate(base_saturday = ECO2_gmh), by = "Id") %>% 
+  dplyr::select(Id, lock_saturday, base_saturday, weekday) %>% 
+  mutate(MRF = round((lock_saturday-base_saturday)/base_saturday*100, digits = 2)) %>% 
+  inner_join(network_gis, by= "Id") %>% 
+  filter(MRF<100)
+
+saveRDS(berlin_monday, "berlin_monday.rds")
+saveRDS(berlin_saturday, "berlin_saturday.rds")
+
+hist(berlin_saturday$MRF)
+
+tmap_mode("view")
+veris <- viridis::magma(250, direction = -1)
+
+berlin_saturday %>%
+  dplyr::select(MRF, geometry) %>%
+  st_as_sf() %>%
+  st_transform(crs = 4326) %>%
+  tm_shape() +
+  tm_lines("MRF", palette=veris, n=10, style = "kmeans", lwd = 1.5, title.col = "Mean relative flux change on Saturday [%]", 
+           midpoint = 0) 
+
+berlin_monday %>%
+  dplyr::select(MRF, geometry) %>%
+  st_as_sf() %>%
+  st_transform(crs = 4326) %>%
+  tm_shape() +
+  tm_lines("MRF", palette=veris, n=10, style = "kmeans", lwd = 1.5, title.col = "Mean relative flux change on Monday [%]", 
+           midpoint = 0) 
+
+test <- 
+  berlin_monday %>%
+  dplyr::select(MRF, weekday, geometry) %>%
+  bind_rows(berlin_saturday %>% dplyr::select(MRF, weekday, geometry)) %>% 
+  st_as_sf() %>%
+  st_transform(crs = 4326)
+
+test %>% 
+  tm_shape() +
+  tm_lines("MRF", palette=veris, n=10, style = "kmeans", lwd = 1.5, title.col = "Mean relative flux change on Monday [%]", 
+           midpoint = 0) +
+  tm_facets(by="weekday", free.scales = F, free.coords = FALSE, free.scales.fill = FALSE)
+
+
+
+if (cityMap == TRUE) {
+  
+  #Unit for calculations
+  if (unit == "grams") {
+    
+    pivot_col <- bind_rows(traffic_CO2_sampled, traffic_CO2_nonsampled, traffic_CO2_motor) %>%
+      dplyr::select(Id, date, ECO2_gmh) %>%
+      group_by(Id, date) %>%
+      summarise(ECO2_gmh = sum(ECO2_gmh), .groups = "drop") %>%
+      pivot_wider(id_cols = Id, names_from = date, values_from = ECO2_gmh)
+  }
+  
+  if (unit == "micro") {
+    
+    pivot_col <- bind_rows(traffic_CO2_sampled, traffic_CO2_nonsampled, traffic_CO2_motor) %>%
+      dplyr::select(Id, date, ECO2_micro) %>%
+      group_by(Id, date) %>%
+      summarise(ECO2_micro = sum(ECO2_micro), .groups = "drop") %>%
+      pivot_wider(id_cols = Id, names_from = date, values_from = ECO2_micro)
+  }
+  
+  if (unit == "gramsCarbon") {
+    
+    pivot_col <- bind_rows(traffic_CO2_sampled, traffic_CO2_nonsampled, traffic_CO2_motor) %>%
+      dplyr::select(Id, date, EC_gmh) %>%
+      group_by(Id, date) %>%
+      summarise(EC_gmh = sum(EC_gmh), .groups = "drop") %>%
+      pivot_wider(id_cols = Id, names_from = date, values_from = EC_gmh)
+  }
+  
+  
+  motorway_road$Id <- as.factor(motorway_road$Id)
+  getgeometry <- bind_rows(GIS_road_sampled %>% dplyr::select(Id, StreetName, geometry)) %>%
+    bind_rows(GIS_road_nonsampled %>% dplyr::select(Id, StreetName, geometry)) %>%
+    bind_rows(motorway_road %>% dplyr::select(Id, StreetName, geometry))
+  
+  ECO2T_cal <- pivot_col %>%
+    merge(getgeometry, by= "Id") %>%
+    #dplyr::select(-StreetName) %>%
+    sf::st_as_sf() %>%
+    sf::st_transform(crs = 4326)
+  
+  # #st_write(mynames, paste0("output1/traffic/maps/",year,month,"ETCO2.shp"), driver = "ESRI Shapefile")
+  # #Aggregate with GRID
+  # #ECO2T_ras <-raster::aggregate(ECO2T_cal, ROTH_grid, FUN=mean)
+  #
+  #Rasterize as stars
+  ECO2T_ras <- pbapply::pblapply(2:(ncol(ECO2T_cal)-1), function(i)
+    stars::st_rasterize(ECO2T_cal [, i]))
+  
+  qtm(ECO2T_ras[[9]])
+  
+  #Convert to data.frame
+  ECO2T_ras <- pbapply::pblapply(1:length(ECO2T_ras), function(i)
+    as.data.frame(ECO2T_ras [[i]]))
+  
+  #Convert to raster format
+  ECO2T_ras <-  pbapply::pbsapply(1:length(ECO2T_ras), FUN=function(i)
+    raster::rasterFromXYZ(xyz = ECO2T_ras[[i]],
+                          crs = "+proj=utm +zone=33 +datum=WGS84 +units=m +no_defs +ellps=WGS84 +towgs84=0,0,0"))
+  trafficCO2Map <- raster::stack(ECO2T_ras)
+  
+  #raster::writeRaster(trafficCO2Map, "net/traffic_23jul2019.tif")
+  
+  #raster::writeRaster(trafficCO2Map,paste0("Components/Transport/output/maps/",year,month,myday, "ETCO2.TIF"), format="GTiff", overwrite = TRUE)
+  return(ECO2T_cal)
+}
+
+return(mydays)
+
+
+
+myMLtraffic <- apply(input, 1, MLtrafTrain)
+job_traffic_stack <- raster::stack(unlist(myMLtraffic)) #Or get raster stack
+qtm(job_traffic_stack[[c(19)]]) #plot the map
+
+#raster::writeRaster(trafficCO2Map, "net/traffic_6feb2019.tif")
+
+
+CO2_roads <- do.call(rbind.data.frame, myMLtraffic)
+write_csv(CO2_roads, "/Users/co2map/Documents/table_job_CO2E_Berlin_sep2022_id.csv")
+
+
+CO2_roads <- myMLtraffic[[1]][[1]]
+
+CO2_traffic_18h <- CO2_roads %>%
+  rename(CO2 = '2022-09-01 18:00:00') %>%
+  mutate(StreetName = ifelse(is.na(StreetName), "SEM", StreetName)) %>%
+  subset(StreetName !="SEM") %>%
+  na.omit() %>%
+  group_by(StreetName) %>%
+  summarise(CO2=round(sum(CO2), digits = 2),
+            geometry = st_union(geometry)) %>%
+  st_as_sf() %>%
+  st_transform(crs = 4326)
+
+st_write(CO2_traffic_18h, "CO2_traffic_18h.gpkg", driver = "GPKG", append = TRUE)
+summary(CO2_traffic_18h$CO2)
+veris <- viridis::viridis(250, direction = -1) #create color
+
+qtm(CO2_traffic_18h)
+
+CO2_traffic_18h %>%
+  tm_shape() +
+  tm_lines("CO2") +
+  tm_layout(legend.show = TRUE, title = "Rio de Janeiro",
+            title.color = "#3f1651", title.size = 1.5,
+            frame = TRUE, legend.outside = FALSE, legend.text.size = 1) +
+  tm_scale_bar(position = "right", lwd = 1, color.dark = "black", color.light = "white", text.size = 0.5)+
+  tm_credits("Base cartográfica:OpenStreetMap® contributions, 2022",
+             size = 0.6, position=c("left","bottom"), col = "#3f1651")+
+  tm_compass(type="arrow", position=c("right", "top"), show.labels = 1)
+tmap_save(iplot, filename = "fig-NEEmap.png", asp = 0)
+
+
