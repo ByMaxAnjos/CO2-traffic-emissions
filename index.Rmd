@@ -6,7 +6,7 @@ output:
     source_code: "https://github.com/ByMaxAnjos"
     vertical_layout: scroll
     social: menu
-    theme: yeti
+    theme: flatly
 ---
 
 ```{r setup, include=FALSE}
@@ -587,4 +587,4 @@ Inspired by community dashboards and built using R + Flexdashboard.
 
 <center>
 
-**Thanks** for visiting my first interactive FlexDashboard in R, the ZoomCityCarbonModel. Your feedback is greatly appreciated and will help me continue to improve the dashboard's functionality and design.
+Thank you for exploring the **ZoomCityCarbonModel**!
