@@ -57,8 +57,7 @@ This **Emission Geographic Information platform** is designed to communicate the
 
 This **Flexdashboard R** leverages road traffic estimates from the ZCCM::traffic model <https://github.com/ByMaxAnjos/CO2-traffic-emissions> to showcase the spatio-temporal variability of CO2 emissions at the city level. With this tool, users can explore detailed street-level emissions, emissions associated with Open Street Map features, and temporal patterns such as hourly time series, daily cycles, and monthly totals.
 
-**Author: [Max Anjos](https://github.com/ByMaxAnjos).** 
-Anjos M & Meier F (2025) Front. Environ. Sci.doi: [10.3389/fenvs.2024.1461656](https://doi.org/10.3389/fenvs.2024.1461656)
+**Author: [Max Anjos](https://github.com/ByMaxAnjos).** Anjos M & Meier F (2025) Front. Environ. Sci.doi: [10.3389/fenvs.2024.1461656](https://doi.org/10.3389/fenvs.2024.1461656)
 
 # Citywide Emissions {data-icon="fa-map-marked-alt"}
 
@@ -111,7 +110,6 @@ leaflet(imap, options = leafletOptions(zoomControl = FALSE)) %>%
 ### Temporal Trends
 
 ```{r fig.height=5}
-
 highchart() %>% 
     hc_add_series(trend, hcaes(x = date_day, y = ktCO2, color = ktCO2), type = "spline") %>%
     hc_tooltip(crosshairs = TRUE, borderWidth = 1.5, headerFormat = "", pointFormat =
@@ -138,7 +136,7 @@ highchart() %>%
 
 # District Analysis {data-icon="fa-chart-pie"}
 
-## District Selector {data-width=400}
+## District Selector {data-width="400"}
 
 ### Filter Districts
 
@@ -155,7 +153,7 @@ highchart() %>%
   filter_checkbox(id = "district", label = "Select district", sharedData = shared_data, group = ~district, columns=2)
 ```
 
-### Daily Emission Patterns 
+### Daily Emission Patterns
 
 ```{r}
 
@@ -179,7 +177,7 @@ plot_ly(shared_data, x = ~day, y = ~tCO2,
   
 ```
 
-## District Map {data-width=600}
+## District Map {data-width="600"}
 
 ### Interactive map
 
@@ -403,43 +401,96 @@ landuse %>%
   hc_exporting(enabled = TRUE)
 ```
 
-# iStreets {data-orientation="rows" data-icon="fa-list"}
+# Street-Level Analysis {data-icon="fa-road" data-orientation="rows"}
 
-## Row {data-height="50"}
+## Emission Hotspots {data-height="600"}
 
 ## Row 1 {data-height="500" data-width="400"}
 
 ### Top 20 Emitter Streets in tCO2
 
 ```{r fig.height=5}
-#street <- fread("street.csv")
-
-# Colors
-custom_colors <- viridis::mako(n = length(street$name))
-
-# Most emitter streets - treemap 
-street %>% 
-  head(20) %>% 
-  hchart("treemap", hcaes(x = name, value = tCO2, color = tCO2), dataLabels = list(enabled = TRUE)) %>% 
-  #hc_colorAxis(stops = color_stops(colors = viridis::viridis(20))) %>% 
-  hc_credits(enabled = TRUE, text = '@ZoomCityCarbonModel') %>% 
-  hc_exporting(enabled = TRUE) 
+# Prepare street data
+top_streets <- street %>%
+  arrange(desc(tCO2)) %>%
+  head(20) %>%
+  mutate(
+    name = fct_reorder(name, tCO2),
+    label = paste0(name, ": ", round(tCO2, 1), " tCO₂/month"),
+    color = viridis::mako(20, direction = -1)
+  )
+# Create treemap with improved formatting
+top_streets %>%
+  hchart(
+    "treemap",
+    hcaes(x = name, value = tCO2, color = tCO2),
+    levels = list(
+      list(level = 1, dataLabels = list(enabled = TRUE, 
+                                      style = list(fontSize = "10px")))
+    ),
+    dataLabels = list(
+      enabled = TRUE,
+      format = "{point.name}",
+      style = list(
+        textOutline = "none",
+        fontWeight = "normal"
+      )
+    )
+  ) %>%
+  hc_colorAxis(
+    minColor = "#FCFDBF",
+    maxColor = "#5B1874",
+    stops = color_stops(colors = viridis::mako(5))
+  ) %>%
+  hc_title(text = "Street Emission Distribution") %>%
+  hc_subtitle(text = "Size represents emission magnitude") %>%
+  hc_credits(enabled = TRUE, text = "Zoom City Carbon Model") %>%
+  hc_add_theme(hc_theme_flat()) %>%
+  hc_exporting(enabled = TRUE)
 
 ```
 
-## Row 2 {data-height="900" data-width="800"}
+## Street Finder {data-height="700"}
 
-### Find your street
+### Interactive Street Emissions Explorer
 
 ```{r}
-#find_street <- fread("find_street.csv")
-find_street %>% 
+# Prepare DT options
+dt_options <- list(
+  dom = 'Blfrtip',
+  buttons = c('copy', 'csv', 'excel'),
+  pageLength = 10,
+  lengthMenu = c(5, 10, 20, 50),
+  scrollX = TRUE,
+  initComplete = JS(
+    "function(settings, json) {",
+    "$(this.api().table().header()).css({'background-color': '#2c3e50', 'color': '#fff'});",
+    "}"
+  ),
+  columnDefs = list(
+    list(targets = 0, visible = FALSE), # Hide row names
+    list(targets = 1, width = '200px'), # Street name column
+    list(targets = 2, width = '150px')  # Emissions column
+  )
+)
+
+# Create enhanced datatable
+find_street %>%
+  mutate(
+    ECO2_gmh = round(ECO2_gmh, 2),
+    name = as.factor(name)
+  ) %>%
   datatable(
-caption="Top 20 emitter streets",
-rownames=T,
-filter="top",
-options = list(pageLength = 20
-))
+    rownames = FALSE,
+    colnames = c('Street Name', 'CO₂ Emissions (gram/hour)'),
+    caption = htmltools::tags$caption(
+      style = 'caption-side: top; text-align: left;',
+      'Street-Level CO₂ Emissions Explorer'
+    ),
+    filter = 'top',
+    extensions = c('Buttons', 'Scroller'),
+    options = dt_options
+  )
 
 ```
 
@@ -504,8 +555,7 @@ week %>%
 
 # About {data-icon="fa-info-circle"}
 
-Row {data-height=900}
------------------------------------------------------------
+## Row {data-height="900"}
 
 ### about txt {.no-title .no-padding .colored}
 
@@ -515,20 +565,19 @@ Anjos M and Meier F (2025) Zooming into Berlin: tracking street-scale CO2 emissi
 
 <h4>**Data Source**</h4>
 
-* Traffic counting data -  https://api.viz.berlin.de/daten/verkehrsdetektion; 
-* Open Street Map features - https://wiki.openstreetmap.org/wiki/Map_features; 
-* Berlin Atlas data such as land use, density population, and high-level daily mean traffic volumes - https://fbinter.stadt-berlin.de/fb/index.jsp;
-* Meteorological data of the German Weather Service Climate Data Center - https://opendata.dwd.de/climate_environment/CDC/; 
+-   Traffic counting data - <https://api.viz.berlin.de/daten/verkehrsdetektion>;
+-   Open Street Map features - <https://wiki.openstreetmap.org/wiki/Map_features>;
+-   Berlin Atlas data such as land use, density population, and high-level daily mean traffic volumes - <https://fbinter.stadt-berlin.de/fb/index.jsp>;
+-   Meteorological data of the German Weather Service Climate Data Center - <https://opendata.dwd.de/climate_environment/CDC/>;
 
 <h4>**People**</h4>
 
 Developed by [Dr. Max Anjos](https://www.researchgate.net/profile/Max-Anjos/research) and Dr. Fred Meier, Chair of Climatology, TU Berlin.
 
-
 <h4>**Funding**</h4>
 
-- CAPES – Finance Code 001
-- Alexander Von Humboldt Foundation
+-   CAPES -- Finance Code 001
+-   Alexander Von Humboldt Foundation
 
 <h4>**Inspiration**</h4>
 
@@ -537,9 +586,5 @@ Inspired by community dashboards and built using R + Flexdashboard.
 <hr>
 
 <center>
-**Thanks** for visiting my first interactive FlexDashboard in R, the ZoomCityCarbonModel. 
-Your feedback is greatly appreciated and will help me continue to improve the dashboard's functionality and design.
 
-
-
-
+**Thanks** for visiting my first interactive FlexDashboard in R, the ZoomCityCarbonModel. Your feedback is greatly appreciated and will help me continue to improve the dashboard's functionality and design.
